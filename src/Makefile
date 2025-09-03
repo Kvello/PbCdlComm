@@ -23,7 +23,7 @@ OBJS     = $(C_SRCS:%.c=$(OBJ_DIR)/%.o)
 CPP_SRCS = $(shell ls *.cpp)
 OBJS    += $(CPP_SRCS:%.cpp=$(OBJ_DIR)/%.o)
 
-CFLAGS    = -O -g -c -pedantic -Wall `xml2-config --cflags`
+CFLAGS    = -O -g -c -pedantic -Wall `xml2-config --cflags` --std=c++03
 #XMLCFLAGS = `xml2-config --cflags`
 #IFLAGS    = 
 LFLAGS    = -rdynamic 
