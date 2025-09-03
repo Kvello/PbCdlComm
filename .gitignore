@@ -2,6 +2,7 @@ docs
 .vscode
 # Nix setup
 .envrc
+.direnv
 default.nix
 # Compile output
 bin
