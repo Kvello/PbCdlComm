@@ -7,6 +7,7 @@
 #include <log4cpp/Category.hh>
 #include <getopt.h>
 #include <unistd.h>
+#include <cmath>
 using namespace std;
 using namespace log4cpp;
 

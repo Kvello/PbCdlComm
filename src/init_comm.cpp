@@ -26,6 +26,7 @@
 #include <log4cpp/FileAppender.hh>
 #include <log4cpp/Layout.hh>
 #include <log4cpp/PatternLayout.hh>
+#include <cstring>
 #include "init_comm.h"
 #include "serial_comm.h"
 #include "utils.h"

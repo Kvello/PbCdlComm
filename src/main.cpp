@@ -4,6 +4,7 @@
  */
 
 #include <iostream>
+#include <cstdlib>
 #include "collection_process.h"
 #include "utils.h"
 #include <log4cpp/Category.hh>

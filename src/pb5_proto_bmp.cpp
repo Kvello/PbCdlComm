@@ -23,6 +23,7 @@
 #include <unistd.h>
 #include <string>
 #include <log4cpp/Category.hh>
+#include <cstring>
 #include "pb5.h"
 #include "utils.h"
 using namespace std;

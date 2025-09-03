@@ -16,7 +16,10 @@
 #define UTILS_H
 #include <map>
 #include <string>
+#include <string.h>
+#include <cstring>
 #include <exception>
+#include <stdlib.h>
 #include <libxml2/libxml/tree.h>
 using namespace std;
 

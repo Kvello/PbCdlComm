@@ -18,8 +18,10 @@
 #include <vector>
 #include <string>
 #include <stdexcept>
+#include <memory>
 #include <libxml2/libxml/parser.h>
 #include <libxml2/libxml/tree.h>
+#include <typeinfo>
 #include "utils.h"
 using namespace std;
 
