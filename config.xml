@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- CONFIG FILE TO SETUP DATA COLLECTION FROM PAKBUS LOGGER -->
+<!-- Comments with "**" will need to be set for deployment -->
+<!-- ** Set the station name to a brief description. -->
+<COLLECTION logger="" station_name="">
+<!-- Serial Port configuration -->
+<CONNECTION type="serial">
+<!-- ** Set the port_name to the serial port address -->
+<port_name>/dev/ttyUSB0</port_name>
+<!-- ** Set the baud rate, if different -->
+<baud_rate>115200</baud_rate>
+<vtime>10</vtime>
+</CONNECTION>
+<!-- Turn on debugging : use TRUE/FALSE -->
+<DEBUG>FALSE</DEBUG>
+<!--Data output options -->
+<DATA>
+<WORKING_PATH>
+/data/collection/rld/rldmfrsrS1.00/collecting/.pbcdl_comm
+</WORKING_PATH>
+<!--
+Add a table entry to collect data from it. The 
+file_span_secs parameter can be used to set file 
+durations. sample_int_secs parameter indicates the 
+update frequency, which is used to determine if a data 
+file is complete and be moved up from the 
+.../.working directory. 
+-->
+<COLLECT_TABLE>
+<TABLE sample_int_secs="60" file_span_secs="120">
+OneMin
+</TABLE>
+</COLLECT_TABLE>
+</DATA>
+<!--PakBus protocol settings -->
+<!-- The following are default values -->
+<PAKBUS>
+<DST_PAKBUS_ID>1</DST_PAKBUS_ID>
+<DST_NODE_PAKBUS_ID>1</DST_NODE_PAKBUS_ID>
+<!-- Default value for security code is zero -->
+<SECURITY_CODE>0</SECURITY_CODE>
+</PAKBUS>
+</COLLECTION>
