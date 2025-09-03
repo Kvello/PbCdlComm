@@ -1,0 +1,13 @@
+docs
+.vscode
+# Nix setup
+.envrc
+default.nix
+# Compile output
+bin
+obj
+# Logs and data
+*.log
+data
+# Vim files
+*.swp
