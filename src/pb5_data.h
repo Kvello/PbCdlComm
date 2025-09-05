@@ -225,7 +225,7 @@ public:
     {
         tableDataMgr__ = const_cast<TableDataManager*> (tblDataMgr);
     }
- 
+    virtual void configure(const DataOutputConfig& config) = 0;
     /** Function called while starting data collection for a specific table. */
     virtual void initWrite(Table& tblRef) throw (StorageException) = 0;
 
@@ -288,7 +288,12 @@ class AsciiWriter : public TableDataWriter {
 public:
     AsciiWriter(string dataDir = ".", int fileSpan = 3600, 
             char seperator = ',');
+    //Maybe turn of default constructor?
     ~AsciiWriter(); 
+    virtual void configure(const DataOutputConfig& config);
+    void setDataDir(string dataDir){dataDir__=dataDir;};
+    void setFileSpan(int fileSpan){fileSpan__=fileSpan;};
+    void setSeparator(char sep){seperator__=sep;};
     virtual void initWrite(Table& tblRef) throw (StorageException);
     virtual void processRecordBegin(Table& tblRef, int recordIdx, 
                 NSec recordTime);

@@ -222,6 +222,14 @@ void AsciiWriter :: finishWrite(Table& tblRef) throw (StorageException)
     }
 }
 
+void AsciiWriter :: configure(const DataOutputConfig& config){
+    TableOpt opt = config.Tables.at(0);
+    setDataDir(config.WorkingPath);
+    // For now we only support one writing config across all tables
+    setFileSpan(opt.TableSpan);
+    // Only one separator supported: ' ,'
+    setSeparator(' ,');
+}
 void AsciiWriter :: storeBool(const Field& var, bool flag)
 {
    dataFileStream__ << this->seperator__ << flag;

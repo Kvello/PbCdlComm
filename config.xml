@@ -21,7 +21,9 @@
 <!--
 Add a table entry to collect data from it. The 
 file_span_secs parameter can be used to set file 
-durations. sample_int_secs parameter indicates the 
+durations. Obs Obs! Only one file span across all tables is supported.
+DON'T USE DIFFERENT FILE SPANS.
+sample_int_secs parameter indicates the 
 update frequency, which is used to determine if a data 
 file is complete and be moved up from the 
 .../.working directory. 

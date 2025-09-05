@@ -207,6 +207,7 @@ const DataOutputConfig& TableDataManager :: getDataOutputConfig() const
 void TableDataManager :: setDataOutputConfig(const DataOutputConfig& dataOpt)
 {
     dataOutputConfig__ = dataOpt;
+    tblDataWriter__->configure(dataOpt);
     tableList__.reserve(dataOpt.Tables.size()+2);
     return; 
 }
