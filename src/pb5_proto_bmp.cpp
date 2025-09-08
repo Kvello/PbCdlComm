@@ -36,8 +36,7 @@ using namespace log4cpp;
  * @param: Structure containing information about data directory, logger name,
  *         name of tables to collect and the station name.
  */
-BMP5Obj :: BMP5Obj () : PakBusMsg(), dataBufSize__(BMP5_BUFLEN), 
-        tblDataMgr__(NULL) 
+BMP5Obj :: BMP5Obj () : PakBusMsg(), dataBufSize__(BMP5_BUFLEN)
 {
     HiProtoCode__ = 0x01;
     dataBuf__ = new byte[dataBufSize__];
@@ -50,7 +49,7 @@ BMP5Obj :: ~BMP5Obj()
     }
 }
 
-void BMP5Obj :: setTableDataManager(TableDataManager* tblDataMgr)
+void BMP5Obj :: setTableDataManager(TableDataManager& tblDataMgr)
 {
     tblDataMgr__ = tblDataMgr;
 }
@@ -140,7 +139,7 @@ BMP5Obj :: getDataDefinitions() throw (IOException, ParseException)
     this->GetTDF();
     this->GetProgStats((uint2)0);
 
-    int maxRecordSize = tblDataMgr__->getMaxRecordSize();
+    int maxRecordSize = tblDataMgr__.getMaxRecordSize();
     if (maxRecordSize > dataBufSize__) {
         delete [] dataBuf__;
         dataBufSize__ = maxRecordSize;
@@ -153,13 +152,13 @@ void
 BMP5Obj :: GetTDF () throw (IOException, ParseException)
 {
     int    stat;
-    string tdf_file = tblDataMgr__->getDataOutputConfig().WorkingPath;
+    string tdf_file = tblDataMgr__.getDataOutputConfig().WorkingPath;
     tdf_file += "/.working/tdf.dat";
 
     string tdf_file_tmp = tdf_file;
     tdf_file_tmp += ".tmp";
 
-    if ( (stat = tblDataMgr__->BuildTDF()) == FAILURE ) {
+    if ( (stat = tblDataMgr__.BuildTDF()) == FAILURE ) {
 
         Category::getInstance("BMP5")
                 .info("Uploading table definitions file from the logger ...");
@@ -178,7 +177,7 @@ BMP5Obj :: GetTDF () throw (IOException, ParseException)
                     "TDF parsing failed due to rename error");
         }
 
-        stat = tblDataMgr__->BuildTDF();
+        stat = tblDataMgr__.BuildTDF();
         if (stat == FAILURE) {
             Category::getInstance("BMP5")
                      .info("Failed to parse TDF file following download from logger");
@@ -192,7 +191,7 @@ BMP5Obj :: GetTDF () throw (IOException, ParseException)
 int 
 BMP5Obj :: ReloadTDF () 
 {
-    tblDataMgr__->cleanCache();
+    tblDataMgr__.cleanCache();
     Category::getInstance("BMP5")
             .info("Recollecting table definitions file from data logger");
 
@@ -592,7 +591,7 @@ BMP5Obj :: store_data (byte* buf, Table& tbl, int beg, int nrecs,
     int rec_num = 0;
     while (rec_num < nrecs) {
         try {
-            stat = tblDataMgr__->storeRecord (tbl, &buf, beg+rec_num, file_span, 
+            stat = tblDataMgr__.storeRecord (tbl, &buf, beg+rec_num, file_span, 
                     parseTimestamp);
         } catch (StorageException& e) {
             Category::getInstance("BMP5")
@@ -639,9 +638,9 @@ BMP5Obj :: CollectData (const TableOpt& table_opt) throw (AppException, invalid_
     stringstream msgstrm;
     RecordStat recordStat;
 
-    Table& tbl_ref = tblDataMgr__->getTableRef (table_opt.TableName);
+    Table& tbl_ref = tblDataMgr__.getTableRef (table_opt.TableName);
     
-    record_size = tblDataMgr__->getRecordSize (tbl_ref);
+    record_size = tblDataMgr__.getRecordSize (tbl_ref);
 
     // If there is a possibility of the data record be fragmented into multiple
     // packets, then allocate buffer memory to accumulate the data stored in 
@@ -773,7 +772,7 @@ BMP5Obj :: CollectData (const TableOpt& table_opt) throw (AppException, invalid_
          
             // Reset all the history for this Table
             if (tbl_ref.NewFileTime) {
-                tblDataMgr__->flushTableDataCache(tbl_ref);
+                tblDataMgr__.flushTableDataCache(tbl_ref);
             }
         }
     
@@ -781,7 +780,7 @@ BMP5Obj :: CollectData (const TableOpt& table_opt) throw (AppException, invalid_
         // append to it. Else, a new file will be created.
     
         //TODO set the fileSpan/reportSpan here and remove from the get_records call
-        tblDataMgr__->getTableDataWriter()->initWrite(tbl_ref);
+        tblDataMgr__.getTableDataWriter()->initWrite(tbl_ref);
 
        /*
         * Main collection loop
@@ -832,20 +831,20 @@ BMP5Obj :: CollectData (const TableOpt& table_opt) throw (AppException, invalid_
             }
         }
        
-        tblDataMgr__->getTableDataWriter()->finishWrite(tbl_ref);
+        tblDataMgr__.getTableDataWriter()->finishWrite(tbl_ref);
     }
     else {
         //
         // For the case where TblSize (number of records in a table)
         // is not known
         //
-        tblDataMgr__->getTableDataWriter()->initWrite(tbl_ref);
+        tblDataMgr__.getTableDataWriter()->initWrite(tbl_ref);
 
         recordStat = get_records (tbl_ref, GET_LAST_REC | STORE_DATA,
                 record_size, 1, 0, table_opt.TableSpan);
         num_collected_recs = recordStat.count;
        
-        tblDataMgr__->getTableDataWriter()->finishWrite(tbl_ref);
+        tblDataMgr__.getTableDataWriter()->finishWrite(tbl_ref);
     }
 
     if (get_debug()) {
@@ -862,7 +861,7 @@ BMP5Obj :: CollectData (const TableOpt& table_opt) throw (AppException, invalid_
     if ((table_opt.SampleInt >= 0) && (tbl_ref.LastRecordTime.sec > 0)) {
         if ((tbl_ref.LastRecordTime.sec + table_opt.SampleInt) 
                 >= tbl_ref.NewFileTime) {
-            tblDataMgr__->flushTableDataCache(tbl_ref);
+            tblDataMgr__.flushTableDataCache(tbl_ref);
         }
     }
     
@@ -1086,7 +1085,7 @@ BMP5Obj :: GetProgStats (uint2 security_code) throw (ParseException)
                 pack_ptr += prog_stat.ProgName.size() + 1;
   
                 prog_stat.ProgSig = (uint2) PBDeserialize (pack_ptr, 2);
-                tblDataMgr__->setProgStats (prog_stat);
+                tblDataMgr__.setProgStats (prog_stat);
             }
         } 
 

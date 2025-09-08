@@ -166,14 +166,13 @@ void PB5CollectionProcess :: configure() throw (AppException)
         IObuf__.setHexLogDir(dataOpt.WorkingPath);
     }
 
-    tblDataMgr__.setDataOutputConfig(dataOpt);
+    bmp5ImplObj__.setDataOutputConfig(dataOpt);
 
     pakCtrlImplObj__.setPakBusAddr(pbAddr);
     pakCtrlImplObj__.setIOBuf(&IObuf__);
    
     bmp5ImplObj__.setPakBusAddr(pbAddr);
     bmp5ImplObj__.setIOBuf(&IObuf__);
-    bmp5ImplObj__.setTableDataManager(&tblDataMgr__); 
 
     return;
 }

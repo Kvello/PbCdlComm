@@ -73,7 +73,6 @@ private:
     auto_ptr<DataSource> dataSource__;
     CommInpCfg       appConfig__;
     pakbuf           IObuf__;
-    TableDataManager tblDataMgr__;
     PakCtrlObj       pakCtrlImplObj__;
     BMP5Obj          bmp5ImplObj__;
 

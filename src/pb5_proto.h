@@ -187,8 +187,8 @@ class BMP5Obj : public PakBusMsg {
     public :
         BMP5Obj ();
         // BMP5Obj (PBAddr* pb_addr, pakbuf* IOBuf, string appl_dir);
-	~BMP5Obj ();
-        void  setTableDataManager(TableDataManager* tblDataMgr);
+        ~BMP5Obj ();
+        void  setTableDataManager(TableDataManager& tblDataMgr);
         void  getDataDefinitions() throw (IOException, ParseException);
         int   ClockTransaction (uint4 offset_s, uint4 offset_ns);
         int   UploadFile (const char* get_file, char* write_to_file)
@@ -196,9 +196,12 @@ class BMP5Obj : public PakBusMsg {
         int   DownloadFile (const char *filename);
         int   CollectData (const TableOpt& table_opt) 
                       throw (AppException, invalid_argument);
-	int   ControlTable (byte ctrl_opt);
+        int   ControlTable (byte ctrl_opt);
         int   ControlFile (const string& file_name, byte file_cmd);
         int   ReloadTDF ();
+        void setDataOutputConfig(const DataOutputConfig& data_opt){
+            tblDataMgr__.setDataOutputConfig(data_opt);
+        }
  
     protected :
         void  GetProgStats (uint2 security_code) throw (ParseException);
@@ -215,7 +218,7 @@ class BMP5Obj : public PakBusMsg {
     private :
         byte*     dataBuf__;
         int       dataBufSize__;
-        TableDataManager* tblDataMgr__;
+        TableDataManager tblDataMgr__;
 };
 
 #define SUCCESS             0
