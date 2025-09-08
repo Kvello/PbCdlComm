@@ -11,7 +11,7 @@
 using namespace std;
 using namespace log4cpp;
 
-std::auto_ptr<PB5CollectionProcess> proc{ new PB5CollectionProcess() };
+std::auto_ptr<PB5CollectionProcess> proc( new PB5CollectionProcess() );
 
 void atExit(int signum)
 {
