@@ -134,7 +134,7 @@ BMP5Obj :: ClockTransaction (uint4 secs, uint4 nsecs)
  * @return Throws AppException on failure.
  */
 void 
-BMP5Obj :: getDataDefinitions() throw (IOException, ParseException)
+BMP5Obj :: getDataDefinitions() throw ( ParseException)
 {
     this->GetTDF();
     this->GetProgStats((uint2)0);
@@ -148,42 +148,27 @@ BMP5Obj :: getDataDefinitions() throw (IOException, ParseException)
     return;
 }
 
-void 
-BMP5Obj :: GetTDF () throw (IOException, ParseException)
+void BMP5Obj :: GetTDF () throw (ParseException, ios_base::failure)
 {
     int    stat;
     string tdf_file = tblDataMgr__.getDataOutputConfig().WorkingPath;
-    tdf_file += "/.working/tdf.dat";
+    stringstream table_structure;
+    table_structure.exceptions(stringstream::failbit);
 
-    string tdf_file_tmp = tdf_file;
-    tdf_file_tmp += ".tmp";
+    Category::getInstance("BMP5")
+            .info("Uploading table definitions file from the logger ...");
 
-    if ( (stat = tblDataMgr__.BuildTDF()) == FAILURE ) {
+    if (UploadFile(".TDF", table_structure) == FAILURE) {
+        throw ParseException(__FILE__, __LINE__,
+                "TDF parsing failed due to failure in uploading file");
+    }
 
+    stat = tblDataMgr__.BuildTDF(table_structure);
+    if (stat == FAILURE) {
         Category::getInstance("BMP5")
-                .info("Uploading table definitions file from the logger ...");
-
-        if (UploadFile(".TDF", (char *)tdf_file_tmp.c_str()) == FAILURE) {
-            throw ParseException(__FILE__, __LINE__,
-                    "TDF parsing failed due to failure in uploading file");
-        }
-
-        int renameStatus = rename(tdf_file_tmp.c_str(), tdf_file.c_str());
-        if (renameStatus != 0) {
-            Category::getInstance("BMP5")
-                     .error("Failed to rename temporary file to : " + tdf_file);
-            unlink(tdf_file_tmp.c_str());
-            throw IOException (__FILE__, __LINE__,
-                    "TDF parsing failed due to rename error");
-        }
-
-        stat = tblDataMgr__.BuildTDF();
-        if (stat == FAILURE) {
-            Category::getInstance("BMP5")
-                     .info("Failed to parse TDF file following download from logger");
-            throw ParseException (__FILE__, __LINE__,
-                    "Failed to parse TDF file following download from logger");
-        }
+                    .info("Failed to parse TDF file following download from logger");
+        throw ParseException (__FILE__, __LINE__,
+                "Failed to parse TDF file following download from logger");
     }
     return;
 }
@@ -301,18 +286,16 @@ BMP5Obj :: DownloadFile (const char *filename)
  * @param get_file: File to upload from logger to host. This should
  *                  include the complete pathname (i.e. CPU:Def.TDF 
  *                  instead of Def.TDF.
- * @param write_to_file: Complete path of the destination filename on 
- *                  host.
+ * @param out_stream: An ostream where the data will be stored (in memory)
  * @return SUCCESS | FAILURE
  */ 
 int 
-BMP5Obj :: UploadFile (const char *get_file, char *write_to_file) throw (IOException)
+BMP5Obj :: UploadFile (const char *get_file, ostream& out_stream) throw (IOException)
 {
     int      len, stat = FAILURE;
     uint4    file_offset = 0;
     uint4    file_datalen = 0;
     Packet   pack;
-    ofstream TDFdata;
     bool     ioException = false;
     
     // Maximum number of bytes that can be packed in a PakBus message
@@ -345,16 +328,7 @@ BMP5Obj :: UploadFile (const char *get_file, char *write_to_file) throw (IOExcep
 
     MsgBodyLen__ = len+10;
 
-    TDFdata.open (write_to_file, ofstream::binary | ofstream::out);
     
-    if (TDFdata.is_open() == false) {
-        string err("Failed to open : ");
-        err.append(write_to_file);
-        Category::getInstance("BMP5")
-                 .error(err);
-        throw IOException(__FILE__, __LINE__, err.c_str());
-    }
-
     while (1) {
         PBSerialize (MsgBody__+len+4, (uint4)file_offset, 4);
 
@@ -384,16 +358,7 @@ BMP5Obj :: UploadFile (const char *get_file, char *write_to_file) throw (IOExcep
                 PacketErr ("File Upload Transaction", pack, stat);
             }
             else {
-                try {
-                    file_datalen = process_upload_file (pack, TDFdata);
-                } 
-                catch (IOException& ioe) {
-                    string err("I/O error occurred while writing to : ");
-                    err.append(write_to_file);
-                    Category::getInstance("BMP5").warn(err);
-                    ioException = true;
-                    break;
-                }
+                file_datalen = process_upload_file (pack, out_stream);
                 file_offset += file_datalen;
             }
             packetQueue__->pop_front ();
@@ -416,15 +381,6 @@ BMP5Obj :: UploadFile (const char *get_file, char *write_to_file) throw (IOExcep
                 sleep (1);
             }
         }
-    }
-    
-    TDFdata.close ();
-
-    if (ioException) {
-        string err("Removing possibly corrupted file : ");
-        err.append(write_to_file);
-        Category::getInstance("BMP5").notice(err);
-        unlink(write_to_file);
     }
     
     if (ioException || (file_offset == 0) || stat) {
@@ -461,7 +417,7 @@ BMP5Obj :: UploadFile (const char *get_file, char *write_to_file) throw (IOExcep
  * the packet. 0 is returned to indicate error conditions.
  */
 int 
-BMP5Obj :: process_upload_file (Packet& pack, ofstream& filedata) throw (IOException)
+BMP5Obj :: process_upload_file (Packet& pack, ostream& out_data) throw (IOException)
 {
     byte *pack_ptr = (byte *)(pack.begPacket + 11);
     string errormsg;
@@ -485,11 +441,7 @@ BMP5Obj :: process_upload_file (Packet& pack, ofstream& filedata) throw (IOExcep
 
     int file_data_len = pack.endPacket - (char *)pack_ptr - 2;
     // Need to subtract the signature length as well
-    filedata.write ((const char *)pack_ptr, file_data_len);
-    filedata.flush();
-    if (filedata.bad()) {
-        throw IOException(__FILE__, __LINE__, "I/O error");
-    }
+    out_data.write ((const char *)pack_ptr, file_data_len);
     return file_data_len;
 }
 

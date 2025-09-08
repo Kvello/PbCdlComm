@@ -260,44 +260,22 @@ void TableDataManager :: saveTableStorageHistory()
 }
 
 /**
- * Function to construct Table structure information from the Table 
- * Definitions File.
+ * Function to construct Table structure information from the logger
  * It builds and maintains the table information in a vector of Table
- * structures in memory. Also the constructed table information is 
- * written to a XML file in the $DATA/.working directory.
+ * structures in the class.
  *
- * @return SUCCESS | FAILURE.
+ * @return SUCCESS | FAILURE
  */
-int TableDataManager :: BuildTDF()
+int TableDataManager :: BuildTDF(istream& table_structure)
 {
-    ifstream TDFdata;
     tableList__.clear();
-    string   conf_dir(dataOutputConfig__.WorkingPath);
-    conf_dir += "/.working";
-    string   tdf_file(conf_dir);
-    string   xml_file(conf_dir);
-    tdf_file += "/tdf.dat";
-    xml_file += "/tdf.xml";
+    table_structure.seekg (0, ios_base::end);
+    int len = table_structure.tellg ();
+    table_structure.seekg (0, ios_base::beg);
 
-    TDFdata.open (tdf_file.c_str(), ios::binary);
-
-    if (!TDFdata.is_open()) {
-         Category::getInstance("TableDataManager")
-                  .warn("Table definitions file does not exist : " +
-                           tdf_file);
-        return FAILURE;
-    }
-    TDFdata.seekg (0, ios_base::end);
-    int len = TDFdata.tellg ();
-    TDFdata.seekg (0, ios_base::beg);
-
-    if (len == 0) {
+        if (len == 0) {
         Category::getInstance("TableDataManager")
                  .error("No data available for parsing Table definitions");
-        TDFdata.close();
-        Category::getInstance("TableDataManager")
-                 .info("Removing invalid table definition file : " + tdf_file);
-        unlink(tdf_file.c_str());
         return FAILURE;
     }
 
@@ -309,11 +287,11 @@ int TableDataManager :: BuildTDF()
     catch(bad_alloc& bae) {
         Category::getInstance("TableDataManager")
                  .error("Failed to allocate buffer to parsing Table definitions");
-        TDFdata.close();
         return FAILURE;
     }
 
-    TDFdata.read ((char *)tdf_data, len);
+    table_structure.read ((char *)tdf_data, len);
+
 
     byte* ptr    = tdf_data;
     byte* endptr = tdf_data+len;
@@ -325,13 +303,11 @@ int TableDataManager :: BuildTDF()
         int nbytes = readTableDefinition (table_num, ptr, endptr);
         if (nbytes == -1) {
             Category::getInstance("TableDataManager")
-                     .error("Failed to parse table definitions from : " + tdf_file);
+                     .error("Failed to parse table definitions from stream");
             tableList__.clear();
             delete [] tdf_data;
-            TDFdata.close();
             Category::getInstance("TableDataManager")
-                     .info("Removing invalid table definition file : " + tdf_file);
-            unlink(tdf_file.c_str());
+                     .info("Removing invalid table definition in stream");
             return FAILURE;
             break;
         }
@@ -339,11 +315,6 @@ int TableDataManager :: BuildTDF()
         table_num++;
     }
    
-    // Clean up the buffer memory
-    delete [] tdf_data;
-
-    // Dump the table definitions into a XML file
-    xmlDumpTDF ((char *)xml_file.c_str());
 
     // Load the storage history for various tables - information as last 
     // stored index etc.

@@ -17,6 +17,7 @@
 
 #include "pb5_buf.h"
 #include "pb5_data.h"
+#include <ostream>
 
 const uint2 Seed = 0xaaaa;
 const byte  SerSyncByte__ = 0xbd;
@@ -189,10 +190,9 @@ class BMP5Obj : public PakBusMsg {
         // BMP5Obj (PBAddr* pb_addr, pakbuf* IOBuf, string appl_dir);
         ~BMP5Obj ();
         void  setTableDataManager(TableDataManager& tblDataMgr);
-        void  getDataDefinitions() throw (IOException, ParseException);
+        void  getDataDefinitions() throw (ParseException);
         int   ClockTransaction (uint4 offset_s, uint4 offset_ns);
-        int   UploadFile (const char* get_file, char* write_to_file)
-                throw (IOException);
+        int   UploadFile (const char *get_file, ostream& out_stream) throw (IOException);
         int   DownloadFile (const char *filename);
         int   CollectData (const TableOpt& table_opt) 
                       throw (AppException, invalid_argument);
@@ -205,14 +205,14 @@ class BMP5Obj : public PakBusMsg {
  
     protected :
         void  GetProgStats (uint2 security_code) throw (ParseException);
-        void  GetTDF () throw (IOException, ParseException);
+        void  GetTDF () throw ( ParseException, ios_base::failure);
         int   sendCollectionCmd (byte MessageType, Table& tbl, uint4 P1, uint4 P2);
         RecordStat get_records (Table& tbl_ref, byte mode, int record_size, 
                 uint4 P1, uint4 P2, int file_span);
         int   test_data_packet (Table& tbl_ref, Packet& pack) throw (AppException);
         int   store_data (byte* buf, Table& tbl, int beg, int nrecs, int file_span)
                 throw (StorageException);
-        int   process_upload_file (Packet& pack, ofstream& filedata) 
+        int   process_upload_file (Packet& pack, ostream& filedata) 
                 throw (IOException);
     
     private :

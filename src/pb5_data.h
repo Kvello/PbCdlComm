@@ -160,7 +160,7 @@ class TableDataManager {
         TableDataWriter* getTableDataWriter();
         void   setTableDataWriter(TableDataWriter* tblDataWriter);
 
-        int    BuildTDF();
+        int BuildTDF(istream& table_structyre);
         int    xmlDumpTDF (char *filename);
 
         Table& getTableRef (const string& TableName) throw (invalid_argument);
@@ -192,7 +192,7 @@ class TableDataManager {
     private :
         byte          fslVersion__;
         vector<Table> tableList__;
-        DataOutputConfig       dataOutputConfig__;
+        DataOutputConfig dataOutputConfig__;
         DLProgStats   dataLoggerProgStats__;
         auto_ptr<TableDataWriter> tblDataWriter__;
 };
