@@ -1,7 +1,7 @@
 /**
  * @file pb5_data_writer.cpp
  * This will contain implementation of "writer" modules using various persistence mechanisms.
- * Presently only the AsciiWriter class is implemented. 
+ * Presently only the CharacterOutputWriter class is implemented. 
  */
 #include <stdexcept>
 #include <time.h>
@@ -16,67 +16,19 @@
 using namespace std;
 using namespace log4cpp;
 
-/**
- * Accessor function for the TableDataWriterFactory object.
- * @return TableDataWriterFactory: Reference to the factory instance.
- */
-TableDataWriterFactory& TableDataWriterFactory :: getInstance()
-{
-    static TableDataWriterFactory tblDataWriterFactory__;
-    return tblDataWriterFactory__;
-}
 
 /**
- * Factory method for obtaining an instance of a TableDataWriter object.
- * 
- * @param type: Enum datatype to identify a writer object type. Currently
- *              supports the AsciiWriter object only.
- */
-auto_ptr<TableDataWriter> TableDataWriterFactory :: getWriter(TDWtype type)
-        throw (logic_error)
-{
-    switch (type) {
-        case ASCII : return auto_ptr<TableDataWriter>(new AsciiWriter);
-        default    : throw logic_error("Writer implementation unavailble");
-    }
-}
-
-/**
- * Constructor for an AsciiWriter object.
+ * Constructor for an CharacterOutputWriter object.
  * 
  * @param datadir: Data directory for storing final datafiles.
  * @param filespan: Maximum timespan of a datfile. Defaults to 60 minutes.
  * @param sep: Seperator/delimiter character to use while writing data records.
  */
-AsciiWriter :: AsciiWriter(string datadir, int filespan, char sep) :
-    dataDir__(datadir), fileSpan__(filespan), seperator__(sep),
-    recordCount__(0) 
+CharacterOutputWriter :: CharacterOutputWriter(const string pipe_name, string sep) : 
+seperator__(sep), recordCount__(0)
 {
     dataFileStream__.exceptions(ofstream::badbit | ofstream::failbit); 
-
-    if (dataDir__.size() == 0) {
-        dataDir__ = ".";
-    }
-
-    if (fileSpan__ < 0) {
-        fileSpan__ = 3600;
-    }
-}
-
-/**
- * Destructor ensures that the output datastream is closed.
- */
-AsciiWriter :: ~AsciiWriter() 
-{
-    if (dataFileStream__.is_open()) {
-        try {
-            dataFileStream__.close();
-        } 
-        catch (ios_base::failure& fe) {
-            Category::getInstance("AsciiWriter")
-                     .error("Caught exception during closing filestream");
-        } 
-    }
+    dataFileStream__.open(pipe_name.c_str());
 }
 
 /**
@@ -87,7 +39,7 @@ AsciiWriter :: ~AsciiWriter()
  * @param timeInfo:  Reference to the NSec structure containing time information.
  */
 
-int AsciiWriter :: GetTimestamp (char *timestamp, const NSec& timeInfo)
+int CharacterOutputWriter :: GetTimestamp (char *timestamp, const NSec& timeInfo)
 {
     if (!timestamp) {
         return FAILURE;
@@ -121,7 +73,7 @@ int AsciiWriter :: GetTimestamp (char *timestamp, const NSec& timeInfo)
  * @param sample_time: Time measured from 1990.
  * @return Pointer to a character string containing the timestamp.
  */
-string AsciiWriter :: getFileTimestamp (uint4 sample_time) 
+string CharacterOutputWriter :: getFileTimestamp (uint4 sample_time) 
         throw (invalid_argument)
 {
     if (0 == sample_time) {
@@ -143,177 +95,84 @@ string AsciiWriter :: getFileTimestamp (uint4 sample_time)
     return file_timestamp;
 }
 
-void AsciiWriter :: initWrite(Table& tblRef) throw (StorageException)
+void CharacterOutputWriter :: initWrite(Table& tblRef)
 {
-    if (tblRef.NewFileTime) {
-        openDataFile(tblRef, false);
-    } 
-    else {
-        openDataFile(tblRef, true);
+    if(!tblRef.header_sent){
+        writeHeader(tblRef);
     }
+    dataFileStream__<<"["<<tblRef.TblName<<"]"<<endl;
 }
 
-void AsciiWriter :: reportRecordCount()
+void CharacterOutputWriter :: reportRecordCount()
 {
     if (recordCount__) {
         stringstream msg;
         msg << "Wrote " << recordCount__ << " records";
-        Category::getInstance("AsciiWriter")
+        Category::getInstance("CharacterOutputWriter")
                  .debug(msg.str());
         recordCount__ = 0;
     }
 }
 
-void AsciiWriter :: processRecordBegin(Table& tbl_ref, int recordIdx, 
+void CharacterOutputWriter :: processRecordBegin(Table& tbl_ref, int recordIdx, 
         NSec recordTime) 
 {
     char timestamp[32];
     // GetTimestamp(timestamp, tbl_ref.LastRecordTime); 
-    AsciiWriter::GetTimestamp(timestamp, recordTime);
-
-    // if ( (tbl_ref.LastRecordTime.sec >= tbl_ref.NewFileTime) ) {
-    if ( (recordTime.sec >= tbl_ref.NewFileTime) ) {
-        // A new file needs to be created. If a file stream is already 
-        // open for storing data, close it. 
-      
-        if (dataFileStream__.is_open() && tbl_ref.FirstSampleInFile) {
-            dataFileStream__.close();
-            reportRecordCount();
-            moveRawFile (tbl_ref);
-            openDataFile (tbl_ref, true);
-        }
-
-        // tbl_ref.FirstSampleInFile = tbl_ref.LastRecordTime.sec;
-        tbl_ref.FirstSampleInFile = recordTime.sec;
-        tbl_ref.NewFileTime = fileSpan__*((int)(recordTime.sec/fileSpan__)) 
-                 + fileSpan__;
-    }
-
+    CharacterOutputWriter::GetTimestamp(timestamp, recordTime);
     // Print the timestamp for the record followed by the values 
     // for each column in the table. 
 
     dataFileStream__ << timestamp << this->seperator__ << recordIdx;
 }
 
-void AsciiWriter :: processRecordEnd(Table& tbl_ref) 
+void CharacterOutputWriter :: processRecordEnd(Table& tbl_ref) 
 {
     dataFileStream__ << endl;
     recordCount__ += 1;
 }
 
-void AsciiWriter :: finishWrite(Table& tblRef) throw (StorageException)
+void CharacterOutputWriter :: finishWrite(Table& tblRef) throw (StorageException)
 {
-    if (dataFileStream__.is_open()) {
-        try {
-            dataFileStream__.close(); // close() can throw ios_base::failure too.
-            if (dataFileStream__.bad()) {
-                throw ios_base::failure("err");
-            }
-        } 
-        catch (ios_base::failure& fe) {
-            stringstream error;
-            error << "Caught exception while closing datafile for : " 
-                  << tblRef.TblName;
-            Category::getInstance("AsciiWriter")
-                     .notice(error.str());
-            throw StorageException(__FILE__, __LINE__, "file closing error");
-        }
-        reportRecordCount();
-    }
+    dataFileStream__<<"\n";
+    dataFileStream__.flush();
 }
 
-void AsciiWriter :: configure(const DataOutputConfig& config){
-    TableOpt opt = config.Tables.at(0);
-    setDataDir(config.WorkingPath);
-    // For now we only support one writing config across all tables
-    setFileSpan(opt.TableSpan);
-    // Only one separator supported: ' ,'
-    setSeparator(' ,');
-}
-void AsciiWriter :: storeBool(const Field& var, bool flag)
+void CharacterOutputWriter :: storeBool(const Field& var, bool flag)
 {
    dataFileStream__ << this->seperator__ << flag;
 }
 
-void AsciiWriter :: storeFloat(const Field& var, float num)
+void CharacterOutputWriter :: storeFloat(const Field& var, float num)
 {
    dataFileStream__ << this->seperator__ << num;
 }
 
-void AsciiWriter :: storeInt(const Field& var, int num)
+void CharacterOutputWriter :: storeInt(const Field& var, int num)
 {
     dataFileStream__ << this->seperator__ << num;
 }
 
-void AsciiWriter :: storeUint4(const Field& var, uint4 num)
+void CharacterOutputWriter :: storeUint4(const Field& var, uint4 num)
 {
    dataFileStream__ << this->seperator__ << num;
 }
 
-void AsciiWriter :: storeUint2(const Field& var, uint2 num)
+void CharacterOutputWriter :: storeUint2(const Field& var, uint2 num)
 {
    dataFileStream__ << this->seperator__ << num;
 }
 
-void AsciiWriter :: storeString(const Field& var, string& str)
+void CharacterOutputWriter :: storeString(const Field& var, string& str)
 {
    dataFileStream__ << this->seperator__ << "\"" << str << "\"";;
 }
 
-void AsciiWriter :: processUnimplemented(const Field& var)
+void CharacterOutputWriter :: processUnimplemented(const Field& var)
 {
    dataFileStream__ << this->seperator__ << "-9999";
 }
 
-/**
- * Function to create a new data file along with the header for the
- * particular table.
- * If opening the file in the append mode, the function checks to ensure that
- * the file exists/has non-zero size. If not, it switches to the "new" mode,
- * which includes creating the file and writing the header information based
- * on the corresponding Table structure.
- *
- * @param dataFileStream__: Reference to the output file stream to use.
- * @param tbl_ref:  Reference to the Table structure whose data is being stored.
- * @param new_file: Flag to indicate creation of a new file. False is used to
- *                  indicate append mode.
- * @return          SUCCESS if file was created. FAILURE if the file couldn't
- *                  be created.
- */
-void AsciiWriter :: openDataFile (const Table& tbl_ref, bool new_file)
-        throw (StorageException)
-{
-    int    file_stat;
-    struct stat buf;
-    bool   isSuccess(false);
-    string tmp_file = this->getTableDataManager()
-                          ->getDataOutputConfig().WorkingPath 
-                        + "/.working/" + tbl_ref.TblName + ".tmp";
-
-    if (!new_file) {
-        file_stat = stat (tmp_file.c_str(), &buf);
-        if (buf.st_size) {
-            dataFileStream__.open (tmp_file.c_str(), ofstream::out | ofstream::app);
-            isSuccess = dataFileStream__.is_open();
-        }
-        else {
-            new_file = true;
-        }
-    }
-
-    if (new_file) {
-        dataFileStream__.open (tmp_file.c_str(), ofstream::out);
-        isSuccess = dataFileStream__.is_open();
-        writeHeader(tbl_ref);
-    }
-       
-    if (!isSuccess) {
-        string errMsg("Failed to open data file : ");
-        errMsg += tmp_file;
-        Category::getInstance("AsciiWriter").error(errMsg);
-        throw StorageException(__FILE__, __LINE__, errMsg.c_str());
-    }
-}
 
 string Field::getProperty(int infoType, int dim) const
 {
@@ -337,7 +196,7 @@ string Field::getProperty(int infoType, int dim) const
     return formattedPropertyValue.str();
 }
 
-void AsciiWriter :: printHeaderLine(const char* prefix, 
+void CharacterOutputWriter :: printHeaderLine(const char* prefix, 
         const vector<Field>& fieldList, int infoType)
 {
     int dim;
@@ -367,14 +226,14 @@ void AsciiWriter :: printHeaderLine(const char* prefix,
    return;
 }
 
-void AsciiWriter :: writeHeader(const Table& tbl_ref)
+void CharacterOutputWriter :: writeHeader(const Table& tbl_ref)
 {
     const vector<Field>& fieldList = tbl_ref.field_list;
 
     const TableDataManager* tblDataMgr = this->getTableDataManager();
 
     if (NULL == tblDataMgr) {
-        throw runtime_error("NULL TableDataManager member in AsciiWriter!");
+        throw runtime_error("NULL TableDataManager member in CharacterOutputWriter!");
     }
 
     const DataOutputConfig& dataOutputConfig = tblDataMgr->getDataOutputConfig();
@@ -408,89 +267,3 @@ void AsciiWriter :: writeHeader(const Table& tbl_ref)
 
     return;
 }
-
-void AsciiWriter :: flush(const Table& tblRef)
-{
-    if(dataFileStream__.is_open()) { 
-        dataFileStream__.close();
-    }
-    moveRawFile(tblRef);
-}
-
-/**
- * Function to rename the temporary datafile to one with appropriate timestamp.
- * It also moves the file from the <working_path>/.working to <working_path> 
- * directory. 
- * Throws AppException if there was an error in building the target datafile 
- * name or if the call to rename() failed.
- *
- * @param tbl_ref: Reference to the Table structure that the data corresponds to.
- */
-void AsciiWriter :: moveRawFile (const Table& tbl_ref) throw (StorageException)
-{
-    stringstream logmsg;
-
-    const DataOutputConfig& dataOutputConfig = this->getTableDataManager()
-                                     ->getDataOutputConfig();
-
-    string tmpDatafilePath(dataOutputConfig.WorkingPath);
-    string finalDatafilePath(dataOutputConfig.WorkingPath);
-
-    tmpDatafilePath.append("/.working/")
-                   .append(tbl_ref.TblName)
-                   .append(".tmp");
-
-    try {
-        finalDatafilePath.append("/")
-                     .append(tbl_ref.TblName)
-                     .append(".")
-                     .append(getFileTimestamp(tbl_ref.FirstSampleInFile))
-                     .append(".raw");
-    } 
-    catch(invalid_argument& iae) {
-        return;
-    }
-
-    struct stat tmpFileStat;
-    int status = stat(tmpDatafilePath.c_str(), &tmpFileStat);
-    
-    if (0 != status) {
-        logmsg << "Failed to validate file size for " << tmpDatafilePath;
-        Category::getInstance("AsciiWriter")
-                 .warn(logmsg.str());
-        logmsg.str("");
-    }
-    else {
-        if(tmpFileStat.st_size == 0) {
-            logmsg << "Removing zero-length temporary file : " << tmpDatafilePath;
-            Category::getInstance("AsciiWriter")
-                     .notice(logmsg.str());
-            unlink(tmpDatafilePath.c_str());
-            return;
-        }
-    }
-
-    status = rename(tmpDatafilePath.c_str(), finalDatafilePath.c_str());
-
-    struct stat fileStat;
-
-    if (0 == status) {
-        stat(finalDatafilePath.c_str(), &fileStat);
-        logmsg << "Created : " << finalDatafilePath << " ("
-               << fileStat.st_size << " bytes)";
-        Category::getInstance("AsciiWriter")
-            .info(logmsg.str());
-    }
-    else {
-        stat(tmpDatafilePath.c_str(), &fileStat);
-        logmsg << "Failed to rename " << tmpDatafilePath << "("
-               << fileStat.st_size << " bytes) to " << finalDatafilePath;
-
-        Category::getInstance("AsciiWriter")
-                .error(logmsg.str());
-        throw StorageException(__FILE__, __LINE__,
-                logmsg.str().c_str());
-    }
-    return;
-}
-

@@ -171,7 +171,8 @@ float GetFinalStorageFloat (uint2 unum)
  * @param data_opt: Reference to the DataOutputConfig structure that contains
  *                  various information for generating file headers. 
  */
-TableDataManager :: TableDataManager () : tblDataWriter__(new AsciiWriter)
+TableDataManager :: TableDataManager (const string pipe_name, const string separator) : 
+tblDataWriter__(new CharacterOutputWriter(pipe_name,separator))
 { 
     tblDataWriter__->setTableDataManager(this);
 }
@@ -207,7 +208,6 @@ const DataOutputConfig& TableDataManager :: getDataOutputConfig() const
 void TableDataManager :: setDataOutputConfig(const DataOutputConfig& dataOpt)
 {
     dataOutputConfig__ = dataOpt;
-    tblDataWriter__->configure(dataOpt);
     tableList__.reserve(dataOpt.Tables.size()+2);
     return; 
 }
@@ -222,41 +222,6 @@ TableDataManager :: ~TableDataManager ()
 { 
     Category::getInstance("TableDataManager")
              .debug("Saving history for all collected tables.");
-    saveTableStorageHistory();
-}
-
-/**
- * Function to store the storage history for each table found in the TDF file.
- */
-void TableDataManager :: saveTableStorageHistory()
-{
-    ofstream tinfoFs;
-    string   tinfoFile;
-
-    for (int count = 0; count < (int)tableList__.size(); count++) {
-
-        tinfoFile.append(dataOutputConfig__.WorkingPath)
-                 .append("/.working/info.")
-                 .append(tableList__[count].TblName);
-
-        tinfoFs.open (tinfoFile.c_str(), ofstream::out);
-
-        if (tinfoFs.is_open()) {
-            tinfoFs << "# NextRecord, LastRecordTime, NewFileTime, TimeOfFirstSampleInFile" << endl
-                    << tableList__[count].NextRecord << endl
-                    << tableList__[count].LastRecordTime.sec << " " 
-                    << tableList__[count].LastRecordTime.nsec << endl
-                    << tableList__[count].NewFileTime << endl
-                    << tableList__[count].FirstSampleInFile << endl;
-            tinfoFs.close();
-        }
-        else { 
-            Category::getInstance("TableDataManager")
-                     .error("Failed to store collection state for " + 
-                              tableList__[count].TblName);
-        }
-        tinfoFile.clear();
-    }
 }
 
 /**
@@ -315,94 +280,10 @@ int TableDataManager :: BuildTDF(istream& table_structure)
         table_num++;
     }
    
-
-    // Load the storage history for various tables - information as last 
-    // stored index etc.
-    loadTableStorageHistory();
-
     return SUCCESS;
 }
 
-/**
- * Function to load the storage history for each table found in the TDF file.
- */
-void TableDataManager :: loadTableStorageHistory()
-{
-    ifstream tinfo_fs;
-    string   tinfo_file;
-    char     buf[256];
 
-    for (int count = 0; count < (int)tableList__.size(); count++) {
-
-        tinfo_file = dataOutputConfig__.WorkingPath + "/.working/info." 
-                + tableList__[count].TblName;
-
-        tinfo_fs.open(tinfo_file.c_str(), ios_base::in);
-
-        if (tinfo_fs.is_open()) {
-
-            NSec lastRecordTime;
-
-            tinfo_fs.getline (buf, 256);
-            tinfo_fs >> tableList__[count].NextRecord
-                     >> lastRecordTime.sec >> lastRecordTime.nsec
-                     >> tableList__[count].NewFileTime
-                     >> tableList__[count].FirstSampleInFile;
-            tableList__[count].LastRecordTime = lastRecordTime;
-
-            tinfo_fs.close();
-
-            stringstream logmsg;
-            logmsg << "Loaded history - " << tableList__[count].TblName 
-                   << "(NextRecord:" << tableList__[count].NextRecord << ","
-                   << "LastRecordTime:" << tableList__[count].LastRecordTime.sec 
-                   << "." << tableList__[count].LastRecordTime.nsec << ","
-                   << "NewFileTime:" << tableList__[count].NewFileTime << ","
-                   << "FirstSampleInFile:" << tableList__[count].FirstSampleInFile
-                   << ")";
-            Category::getInstance("TableDataManager")
-                     .debug(logmsg.str());
-        }
-
-        tinfo_file.clear();
-    }
-    return;
-}
-
-void
-TableDataManager :: cleanCache ()
-{
-    Category::getInstance("TableDataManager")
-            .debug("Removing table definitions file ...");
-    string path(dataOutputConfig__.WorkingPath);
-    path += "/.working/tdf.dat";
-    unlink(path.c_str());
-    
-    path = dataOutputConfig__.WorkingPath;
-    path += "/.working/tdf.xml";
-    unlink(path.c_str());
-
-    string tinfo_file;
-
-    Category::getInstance("TableDataManager")
-            .debug("Resetting data collection parameters");
-
-    for (int count = 0; count < (int)tableList__.size(); count++) {
-        tinfo_file = dataOutputConfig__.WorkingPath + "/.working/info." 
-                + tableList__[count].TblName;
-        // unlink (tinfo_file.c_str());
-        tinfo_file = dataOutputConfig__.WorkingPath + "/.working/" 
-                + tableList__[count].TblName + ".tmp";
-        unlink (tinfo_file.c_str());
-        tableList__[count].NextRecord = 0;
-        tableList__[count].NewFileTime = 0;
-        tableList__[count].FirstSampleInFile = 0; 
-        tableList__[count].LastRecordTime.sec = 0; 
-        tableList__[count].LastRecordTime.nsec = 0; 
-    }
-    tableList__.clear();
-    return;
-}
 
 /** 
  * Read the structure of a table. A successful call returns the 
@@ -984,8 +865,7 @@ NSec parseRecordTime(const byte* data)
  * @param file_span: Span of a datafile in seconds
  * @return SUCCESS | FAILURE (If the data file couldn't be opened).
  */ 
-int TableDataManager :: storeRecord (Table& tbl_ref, byte **data, 
-        uint4 rec_num, int file_span, bool parseTimestamp) throw (StorageException)
+int TableDataManager :: storeRecord (Table& tbl_ref, byte **data, uint4 rec_num) throw (StorageException)
 {
     vector<Field>           field_list = tbl_ref.field_list;
     vector<Field>::const_iterator start, end, itr;
@@ -995,16 +875,9 @@ int TableDataManager :: storeRecord (Table& tbl_ref, byte **data,
     end   = field_list.end();
 
     try {
-        if (parseTimestamp) {
-            // tbl_ref.LastRecordTime = parseRecordTime(*data);
-            recordTime = parseRecordTime(*data);
-            *data += 8;
-        } 
-        else {
-            // tbl_ref.LastRecordTime += tbl_ref.TblTimeInterval;
-            recordTime = tbl_ref.LastRecordTime;
-            recordTime += tbl_ref.TblTimeInterval;
-        }
+        // tbl_ref.LastRecordTime = parseRecordTime(*data);
+        recordTime = parseRecordTime(*data);
+        *data += 8;
     
         tblDataWriter__->processRecordBegin(tbl_ref, rec_num, 
                 recordTime);
@@ -1021,17 +894,17 @@ int TableDataManager :: storeRecord (Table& tbl_ref, byte **data,
         }
 
         tblDataWriter__->processRecordEnd(tbl_ref);
-       
+               
         // Update state variables
         tbl_ref.LastRecordTime = recordTime;
-        tbl_ref.NextRecord += 1;
-    }
+    }       
+
     catch (...) {
         stringstream errormsg;
         char timestamp[64];
-        AsciiWriter::GetTimestamp(timestamp, recordTime);
+        CharacterOutputWriter::GetTimestamp(timestamp, recordTime);
         errormsg << "Failure in storing data record{\"id\":" 
-                 << tbl_ref.NextRecord << ", \"timestamp\":"
+                 << ", \"timestamp\":"
                  << timestamp << "}";
         throw StorageException(__FILE__, __LINE__, errormsg.str().c_str());
     } 
@@ -1274,11 +1147,4 @@ void TableDataManager :: logUnimplementedDataError (const Field& var)
     err_field_list.push_back(var.FieldName);
     last_err_field_name = var.FieldName;
     return;
-}
-
-void TableDataManager :: flushTableDataCache(Table& tblRef)
-{
-    tblDataWriter__->flush(tblRef);
-    tblRef.NewFileTime = 0;
-    tblRef.FirstSampleInFile = 0;
 }

@@ -1,4 +1,5 @@
 /**
+ * 
  * @file pb5_data.h
  * Contains data structures and classes for data collection and storage. 
  */
@@ -113,9 +114,7 @@ struct Field {
  * data for multiple tables.
  */
 struct Table {
-    Table() : TblNum(0), TblSize((uint4)0), TblSignature((uint2)0), 
-            FirstSampleInFile((uint4)0), NewFileTime((uint4)0), 
-            NextRecord((uint4)0) {}
+    Table() : TblNum(0), TblSize((uint4)0), TblSignature((uint2)0), header_sent(false){}
     /* 
      * The following parameters are read in from the Table Definitions file
      * stored on the logger.
@@ -128,14 +127,8 @@ struct Table {
     NSec   TblTimeInterval;
     vector<Field>  field_list;
     uint2  TblSignature;
-    /*
-     * The following parameters are tracked by this application as the data
-     * collection progresses.
-     */
-    uint4  FirstSampleInFile;
-    uint4  NewFileTime;
-    uint4  NextRecord;
-    NSec   LastRecordTime;
+    bool header_sent;
+    NSec LastRecordTime;
 };
 
 class TableDataWriter;
@@ -148,7 +141,7 @@ class TableDataWriter;
 class TableDataManager {
 
     public :
-        TableDataManager();
+        TableDataManager(string pipe_name, string separator);
         ~TableDataManager ();
 
         const DataOutputConfig& getDataOutputConfig() const;
@@ -164,14 +157,11 @@ class TableDataManager {
         int    xmlDumpTDF (char *filename);
 
         Table& getTableRef (const string& TableName) throw (invalid_argument);
-        int    storeRecord (Table& tbl_ref, byte **data, 
-                       uint4 rec_num, int file_span, bool parseTimestamp)
+        int    storeRecord (Table& tbl_ref, byte **data, uint4 rec_num)
                throw (StorageException);
         int    getRecordSize (const Table& tbl);
         int    getMaxRecordSize();
 
-        void   cleanCache();
-        void   flushTableDataCache(Table& tblRef);
 
     protected : 
         int    readTableDefinition (int table_num, byte *ptr, byte *endptr);
@@ -186,8 +176,6 @@ class TableDataManager {
         void   storeDataSample(const Field& var, byte **data);
         int    getFieldSize (const Field& field);
 
-        void   loadTableStorageHistory();
-        void   saveTableStorageHistory();
 
     private :
         byte          fslVersion__;
@@ -225,9 +213,8 @@ public:
     {
         tableDataMgr__ = const_cast<TableDataManager*> (tblDataMgr);
     }
-    virtual void configure(const DataOutputConfig& config) = 0;
     /** Function called while starting data collection for a specific table. */
-    virtual void initWrite(Table& tblRef) throw (StorageException) = 0;
+    virtual void initWrite(Table& tblRef) = 0;
 
     /** Function called just before processing a binary data record */
     virtual void processRecordBegin(Table& tblRef, int recordIdx, 
@@ -263,13 +250,6 @@ public:
      */
     virtual void finishWrite(Table& tblRef) throw (StorageException) = 0; 
 
-    /**
-     * Function called to clear the current state of the data writer.
-     * This would typically happen when the data in the present context
-     * is out of order with the last data record stored by the writer.
-     */
-    virtual void flush(const Table& tblRef) = 0;
-
 private:
     /** 
      * A handle to the TableDataManager object which will invoke this 
@@ -278,23 +258,14 @@ private:
     TableDataManager* tableDataMgr__;
 };
 
-// TODO Add a setTimestampFormat function to AsciiWriter
 
 /**
- * Implementation of the TableDataWriter interface for storing ASCII 
- * data files similar to a CSV format, with the delimiter configurable.
+ * Implementation of the TableDataWriter interface for writing to std::cout
  */
-class AsciiWriter : public TableDataWriter {
+class CharacterOutputWriter : public TableDataWriter {
 public:
-    AsciiWriter(string dataDir = ".", int fileSpan = 3600, 
-            char seperator = ',');
-    //Maybe turn of default constructor?
-    ~AsciiWriter(); 
-    virtual void configure(const DataOutputConfig& config);
-    void setDataDir(string dataDir){dataDir__=dataDir;};
-    void setFileSpan(int fileSpan){fileSpan__=fileSpan;};
-    void setSeparator(char sep){seperator__=sep;};
-    virtual void initWrite(Table& tblRef) throw (StorageException);
+    CharacterOutputWriter(const string pipe_name, string separator);
+    virtual void initWrite(Table& tblRef);
     virtual void processRecordBegin(Table& tblRef, int recordIdx, 
                 NSec recordTime);
 
@@ -308,44 +279,22 @@ public:
     virtual void processUnimplemented(const Field& var);
     virtual void processRecordEnd(Table& tblRef);
     virtual void finishWrite(Table& tblRef) throw (StorageException);
-    virtual void flush(const Table& tblRef);
 
     static int   GetTimestamp(char *timestamp, const NSec& timeInfo);
 
 protected:
+    ofstream dataFileStream__;
     void   writeHeader(const Table& tbl_ref);
     void   printHeaderLine(const char* prefix, const vector<Field>& fieldList, 
                int infoType);
     string getFileTimestamp(uint4 sample_time) throw (invalid_argument);
-    void   openDataFile(const Table& tblRef, bool newFile) throw (StorageException);
-    void   moveRawFile(const Table& tblRef) throw (StorageException);
     void   reportRecordCount();
 
 private:
-    ofstream dataFileStream__;
     string   dataDir__;
-    int      fileSpan__;
-    char     seperator__;
+    string     seperator__;
     int      recordCount__;
 };
-
-/**
- * Factory class for creating TableDataWriter objects.
- */
-class TableDataWriterFactory {
-public:
-    /** Various writer types although only ASCII is currently implemented */
-    enum WriterType { ASCII, NetCDF, PostgreSQL };
-    /** Alias for writer type identification */
-    typedef TableDataWriterFactory::WriterType TDWtype;
-
-    static TableDataWriterFactory& getInstance();
-    auto_ptr<TableDataWriter> getWriter(TDWtype type) throw (logic_error);
-
-private:
-    TableDataWriterFactory() {};
-}; 
-
 string GetVarLenString (const byte *ptr);
 string GetFixedLenString (const byte *str_ptr, Field& var);
 NSec   parseRecordTime(const byte* data);
@@ -354,9 +303,5 @@ NSec   parseRecordTime(const byte* data);
 //! point number following specifications of IEEE-754 standard.
 float  intBitsToFloat (uint4 bits);
 
-//! Function to extract floating point number from low resolution
-//! final storage format.
-float  GetFinalStorageFloat (byte **data);
-//float  GetFinalStorageFloat (uint2 unum);
 
 #endif
