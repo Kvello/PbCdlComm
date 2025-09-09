@@ -12,6 +12,7 @@
 #include <exception>
 #include <string>
 #include <sstream>
+#include <algorithm>
 #include <log4cpp/Category.hh>
 #include "pb5.h"
 #include "init_comm.h"
@@ -36,14 +37,6 @@ public:
      * This would provide cleanup functions while exiting on a signal receipt.
      */
     virtual void onExit() throw (exception) = 0;
-    /* 
-     * Print usage information to standard output.
-     */
-    virtual void printHelp() throw () = 0;
-    /*
-     * Print version information to standard output.
-     */
-    virtual void printVersion() throw () = 0;
 };
 
 /**
@@ -52,22 +45,26 @@ public:
  */
 class PB5CollectionProcess : public DataCollectionProcess {
 public:
-    PB5CollectionProcess();
+    PB5CollectionProcess(
+        string pipe_name, 
+        string separator,
+        bool& executionComplete,
+        bool& optDebug,
+        CommInpCfg& appConfig,
+        auto_ptr<DataSource> dataSource
+    );
     ~PB5CollectionProcess() throw();
     virtual void init(int argc, char* argv[]) throw (exception);
     virtual void run() throw (exception);
     virtual void onExit() throw ();
-    virtual void printHelp() throw ();
-    virtual void printVersion() throw ();
+    virtual int smallestTableInt();
 
 protected :
-    void parseCommandLineArgs(int argc, char* argv[]) throw (exception);
     void configure() throw (AppException);
     void checkLoggerTime() throw (AppException);
     void initSession(int nTry) throw (AppException);
     void collect() throw (AppException);
     void closeSession() throw ();
-    void exitHandler(int signum) throw ();
 
 private:
     auto_ptr<DataSource> dataSource__;
@@ -82,8 +79,10 @@ private:
     bool             executionComplete__;
     bool             loggerTimeCheckComplete__;
     stringstream     msgstrm;
+    bool             has_table_spec;
 };
 
+bool compareSampleInts(const TableOpt& lhs, const TableOpt& rhs);
 #define PB5_APP_NAME "PbCdlComm"
 // #define PB5_APP_VERS "1.3.5 (2008/07/28)"
 // #define PB5_APP_VERS "1.3.6 (2009/07/16)"

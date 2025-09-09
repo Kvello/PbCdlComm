@@ -3,45 +3,182 @@
  * Contains the entry point to the pbcdl_comm application.
  */
 
+#ifdef _WIN32
+#include <windows.h>
+void portable_sleep_s(unsigned int s) {
+    Sleep(s*1000);
+}
+#else
+#include <unistd.h>
+void portable_sleep_s(unsigned int s) {
+    sleep(s);
+}
+#endif
 #include <iostream>
 #include <cstdlib>
+#include <unistd.h>
 #include "collection_process.h"
 #include "utils.h"
 #include <log4cpp/Category.hh>
+#include <log4cpp/OstreamAppender.hh>
 using namespace std;
 using namespace log4cpp;
 
-std::auto_ptr<PB5CollectionProcess> proc( new PB5CollectionProcess() );
-
-void atExit(int signum)
+void printVersion() 
 {
-    static int caught(0);
-    caught++;
-    if (caught > 1) {
-        Category::getInstance("SignalHandler")
-                 .warn("Exiting on multiple signal reception");
-        printSigInfo(signum);
-        exit(1);
+   cout << " " << PB5_APP_NAME << " Version : " << PB5_APP_VERS << endl;
+   return;
+}
+void printHelp() 
+{
+    cout << endl;
+    printVersion();
+    cout << "  Data Collection Software for PakBus Loggers                " << endl;
+    cout << "  Usage : " << PB5_APP_NAME;
+    cout << "  Options :                                                  " << endl;
+    cout << "     -c Complete path of the collection configuration file   " << endl;
+    cout << "     -d Turn on debugging to print packet level errors       " << endl;
+    // cout << "     -e Erase application cache                              " << endl;
+    cout << "     -w Override the working path mentioned in config file   " << endl;
+    cout << "     -r Redirect log msgs to a file instead of stdout. The   " << endl;
+    cout << "        logs will be stored in the <workingPath> directory   " << endl;
+    cout << "     -h Print this help message                              " << endl;
+    cout << "     -v Print version information                            " << endl;
+    cout << endl;
+
+    return;
+
+}
+/**
+ * Function to parse the command line inputs and appropriately update/initialize
+ * various class members and set logging destination.
+ */
+void parseCommandLineArgs(
+    int argc, 
+    char* argv[], 
+    bool& executionComplete,
+    bool& optDebug,
+    CommInpCfg& appConfig,
+    string& separator,
+    string& pipe_name,
+    auto_ptr<DataSource> dataSource
+)
+{
+    char optstring[] = "c:p:w:o:s:drvh";
+    // --- defaults here ---
+    std::string configFilePath   = "./config.xml";
+    std::string workingPath      = "./working";
+    std::string connectionString = "";
+    pipe_name    = "/tmp/default_pipe";
+    separator    = ", ";
+    optDebug     = false;
+    int         cmd_opt;
+    bool        optDisplayHelp = false;
+    bool        optDisplayVersion = false;
+    bool        optRedirectLog(false);
+
+    if (argc == 1) {
+        printHelp();
+        executionComplete = true;
+        return;
     }
-    printSigInfo(signum);
-    printStackTrace();
-    if (NULL != proc.get()) {
-        try {
-            delete proc.get();
-        } catch(exception& e) {
-            cout << e.what() << endl;
+
+
+    while((cmd_opt = getopt(argc, argv, optstring)) != -1) {
+        switch(cmd_opt) {
+            case 'c' : configFilePath = optarg;  break;
+            case 'd' : optDebug = true;       break;
+            case 'p' : connectionString = optarg;        break;
+            // case 'e' : optCleanAppCache = true;  break;
+                       // TODO implement the clean app cache option
+            case 'r' : optRedirectLog = true;     break;
+            case 'w' : workingPath = optarg;     break;
+            case 'h' : optDisplayHelp = true;  break;
+            case 'v' : optDisplayVersion = true;  break;
+            case 'o' : pipe_name = optarg; break;
+            case 's' : separator = optarg; break;
+            case '?' : throw invalid_argument("Invalid argument provided for initialization");
         }
     }
-    exit(1);
-}
 
+    if (optDisplayHelp) {
+        printHelp();
+        executionComplete = true;
+        return;
+    }
+
+    if (optDisplayVersion) {
+        printVersion();
+        executionComplete = true;
+        return;
+    }
+
+    if (optDebug) {
+        cout << "Enabling debug mode ..." << endl;
+        Category::getRoot().setPriority(Priority::DEBUG);
+    }
+    else {
+        Category::getRoot().setPriority(Priority::INFO);
+    }
+
+    try {
+        if (optRedirectLog) {
+            appConfig.redirectLog();
+        }
+        cout << "============================================================" << endl;
+        printVersion();
+        cout << "============================================================" << endl;
+
+        Category::getInstance("Init").debug("Using configuration file : " + 
+                configFilePath);
+        appConfig.loadConfig ((char *)configFilePath.c_str());
+
+        dataSource = appConfig.getDataSource(connectionString);
+
+    } catch (exception& e) {
+        throw AppException(__FILE__, __LINE__, e.what());
+    }
+
+    if (workingPath.size()) {
+        appConfig.setWorkingPath(workingPath);
+    }
+
+    return;
+}
 int main (int argc, char *argv[])
 {
     int stat;
-    setSignalHandler(atExit);
+    bool executionComplete = false;
+    bool optDebug = false;
+    CommInpCfg appConfig;
+    auto_ptr<DataSource> dataSource;
+    string sep;
+    string pipe_name;
+    parseCommandLineArgs(argc,
+        argv,
+        executionComplete,
+        optDebug,
+        appConfig,
+        sep,
+        pipe_name,
+        dataSource);
+    std::auto_ptr<PB5CollectionProcess> proc( 
+        new PB5CollectionProcess(pipe_name,
+        sep, 
+        executionComplete,
+        optDebug,
+        appConfig,
+        dataSource
+     )
+    );
+
     try {
         proc->init(argc,argv);
-        proc->run();
+        int fastest_table_sec = proc->smallestTableInt();
+        while (true){
+            proc->run();
+            portable_sleep_s(fastest_table_sec);
+        }
     } 
     catch (exception& e) {
         cout << e.what() << endl;
