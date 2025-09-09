@@ -186,7 +186,7 @@ struct RecordStat {
 class BMP5Obj : public PakBusMsg {
 
     public :
-        BMP5Obj ();
+        BMP5Obj (const string pipe_name, const string separator);
         // BMP5Obj (PBAddr* pb_addr, pakbuf* IOBuf, string appl_dir);
         ~BMP5Obj ();
         void  setTableDataManager(TableDataManager& tblDataMgr);
@@ -194,8 +194,7 @@ class BMP5Obj : public PakBusMsg {
         int   ClockTransaction (uint4 offset_s, uint4 offset_ns);
         int   UploadFile (const char *get_file, ostream& out_stream) throw (IOException);
         int   DownloadFile (const char *filename);
-        int   CollectData (const TableOpt& table_opt) 
-                      throw (AppException, invalid_argument);
+        int   CollectData (const TableOpt& table_opt) throw (AppException, invalid_argument);
         int   ControlTable (byte ctrl_opt);
         int   ControlFile (const string& file_name, byte file_cmd);
         int   ReloadTDF ();
@@ -205,12 +204,12 @@ class BMP5Obj : public PakBusMsg {
  
     protected :
         void  GetProgStats (uint2 security_code) throw (ParseException);
-        void  GetTDF () throw ( ParseException, ios_base::failure);
+        void  GetTDF ();
         int   sendCollectionCmd (byte MessageType, Table& tbl, uint4 P1, uint4 P2);
         RecordStat get_records (Table& tbl_ref, byte mode, int record_size, 
-                uint4 P1, uint4 P2, int file_span);
+                uint4 P1, uint4 P2);
         int   test_data_packet (Table& tbl_ref, Packet& pack) throw (AppException);
-        int   store_data (byte* buf, Table& tbl, int beg, int nrecs, int file_span)
+        int   store_data (byte* buf, Table& tbl, int beg, int nrecs)
                 throw (StorageException);
         int   process_upload_file (Packet& pack, ostream& filedata) 
                 throw (IOException);
@@ -218,6 +217,7 @@ class BMP5Obj : public PakBusMsg {
     private :
         byte*     dataBuf__;
         int       dataBufSize__;
+        int       next_rec_nbr; 
         TableDataManager tblDataMgr__;
 };
 
