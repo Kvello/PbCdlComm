@@ -99,6 +99,7 @@ void CharacterOutputWriter :: initWrite(Table& tblRef)
 {
     if(!tblRef.header_sent){
         writeHeader(tblRef);
+        tblRef.header_sent = true;
     }
     dataFileStream__<<"["<<tblRef.TblName<<"]"<<endl;
 }

@@ -204,6 +204,7 @@ void SerialConn :: setConnInfo (const string& arg)
  */
 string SerialConn :: getLockId () 
 {
+    cout<<"Entering getLockId"<<endl;
     char dev[32];
     sscanf (portAddr__.c_str(), "/dev/%s", dev);
     return dev;
@@ -493,6 +494,7 @@ void CommInpCfg :: loadConfig (const char *filename)
     if (validator.validateInputs() == false) {
         throw AppException(__FILE__, __LINE__, "Incomplete config file");
     }
+    cout << "loadConfig finished"<<endl;
     return; 
 }
 

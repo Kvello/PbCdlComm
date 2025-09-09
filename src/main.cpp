@@ -19,6 +19,7 @@ void portable_sleep_s(unsigned int s) {
 #include <unistd.h>
 #include "collection_process.h"
 #include "utils.h"
+
 #include <log4cpp/Category.hh>
 #include <log4cpp/OstreamAppender.hh>
 using namespace std;
@@ -38,6 +39,7 @@ void printHelp()
     cout << "  Options :                                                  " << endl;
     cout << "     -c Complete path of the collection configuration file   " << endl;
     cout << "     -d Turn on debugging to print packet level errors       " << endl;
+    cout << "     -o Path to output file or pipe                            " << endl;
     // cout << "     -e Erase application cache                              " << endl;
     cout << "     -w Override the working path mentioned in config file   " << endl;
     cout << "     -r Redirect log msgs to a file instead of stdout. The   " << endl;
@@ -61,14 +63,13 @@ void parseCommandLineArgs(
     CommInpCfg& appConfig,
     string& separator,
     string& pipe_name,
-    auto_ptr<DataSource> dataSource
+    string& connectionString
 )
 {
     char optstring[] = "c:p:w:o:s:drvh";
     // --- defaults here ---
     std::string configFilePath   = "./config.xml";
     std::string workingPath      = "./working";
-    std::string connectionString = "";
     pipe_name    = "/tmp/default_pipe";
     separator    = ", ";
     optDebug     = false;
@@ -133,7 +134,6 @@ void parseCommandLineArgs(
                 configFilePath);
         appConfig.loadConfig ((char *)configFilePath.c_str());
 
-        dataSource = appConfig.getDataSource(connectionString);
 
     } catch (exception& e) {
         throw AppException(__FILE__, __LINE__, e.what());
@@ -147,13 +147,13 @@ void parseCommandLineArgs(
 }
 int main (int argc, char *argv[])
 {
-    int stat;
+    int stat = 0;
     bool executionComplete = false;
     bool optDebug = false;
     CommInpCfg appConfig;
-    auto_ptr<DataSource> dataSource;
-    string sep;
-    string pipe_name;
+    string sep="";
+    string pipe_name="";
+    string connectionString="";
     parseCommandLineArgs(argc,
         argv,
         executionComplete,
@@ -161,19 +161,21 @@ int main (int argc, char *argv[])
         appConfig,
         sep,
         pipe_name,
-        dataSource);
+        connectionString);
+    cout<<"parseCommanLineArgs finished"<<endl;
     std::auto_ptr<PB5CollectionProcess> proc( 
         new PB5CollectionProcess(pipe_name,
         sep, 
         executionComplete,
         optDebug,
         appConfig,
-        dataSource
+        connectionString
      )
     );
 
     try {
         proc->init(argc,argv);
+        cout<<"init finished"<<endl;
         int fastest_table_sec = proc->smallestTableInt();
         while (true){
             proc->run();

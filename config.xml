@@ -29,7 +29,7 @@ file is complete and be moved up from the
 .../.working directory. 
 -->
 <COLLECT_TABLE>
-<TABLE sample_int_secs="60" file_span_secs="120">
+<TABLE sample_int_secs="60">
 OneMin
 </TABLE>
 </COLLECT_TABLE>
