@@ -13,17 +13,26 @@ using namespace log4cpp;
 
 // TODO - Set vtime through configuration file 
 // TODO - Persist connection settings 
-
-PB5CollectionProcess :: PB5CollectionProcess(
+PB5CollectionProcess::PB5CollectionProcess(
     string pipe_name, 
     string separator,
     bool& executionComplete,
     bool& optDebug,
     CommInpCfg& appConfig,
-    auto_ptr<DataSource> dataSource) : 
-IObuf__(8192, 512), optCleanAppCache__(false), has_table_spec(false),
-bmp5ImplObj__(pipe_name,separator),executionComplete__(executionComplete),
-optDebug__(optDebug), appConfig__(appConfig), dataSource__(dataSource__)
+    DataSource* dataSource) :
+    dataSource__(dataSource),             // 1st
+    appConfig__(appConfig),              // 2nd
+    IObuf__(8192, 512),                  // 3rd
+    pakCtrlImplObj__(),                  // 4th (default-initialized)
+    bmp5ImplObj__(pipe_name, separator), // 5th
+    lockFilePath__(),                    // 6th (default-initialized)
+    optDebug__(optDebug),                // 7th
+    optCleanAppCache__(false),           // 8th
+    executionComplete__(executionComplete), // 9th
+    loggerTimeCheckComplete__(false),    // 10th (default-initialized)
+    msgstrm(),                           // 11th (default-initialized)
+    has_table_spec(false)                // 12th
+
 {
 }
 
@@ -71,6 +80,8 @@ void PB5CollectionProcess :: configure() throw (AppException)
     }
 
     appConfig__.dirSetup();
+
+    cout<<"Getting Lock File name"<<endl;
 
     string lockFilePath__ = dataSource__->getLockFileName(PB5_APP_NAME);
 

@@ -61,7 +61,7 @@ void parseCommandLineArgs(
     CommInpCfg& appConfig,
     string& separator,
     string& pipe_name,
-    auto_ptr<DataSource> dataSource
+    DataSource*& dataSource
 )
 {
     char optstring[] = "c:p:w:o:s:drvh";
@@ -133,7 +133,7 @@ void parseCommandLineArgs(
                 configFilePath);
         appConfig.loadConfig ((char *)configFilePath.c_str());
 
-        dataSource = appConfig.getDataSource(connectionString);
+        dataSource = appConfig.getDataSource(connectionString).get();
 
     } catch (exception& e) {
         throw AppException(__FILE__, __LINE__, e.what());
@@ -147,11 +147,10 @@ void parseCommandLineArgs(
 }
 int main (int argc, char *argv[])
 {
-    int stat;
+    int stat = 0;
     bool executionComplete = false;
     bool optDebug = false;
     CommInpCfg appConfig;
-    auto_ptr<DataSource> dataSource;
     string sep;
     string pipe_name;
     parseCommandLineArgs(argc,
@@ -162,18 +161,19 @@ int main (int argc, char *argv[])
         sep,
         pipe_name,
         dataSource);
+    cout<<"parseCommanLineArgs finished"<<endl;
     std::auto_ptr<PB5CollectionProcess> proc( 
         new PB5CollectionProcess(pipe_name,
         sep, 
         executionComplete,
         optDebug,
         appConfig,
-        dataSource
      )
     );
 
     try {
         proc->init(argc,argv);
+        cout<<"init finished"<<endl;
         int fastest_table_sec = proc->smallestTableInt();
         while (true){
             proc->run();

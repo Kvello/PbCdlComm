@@ -51,7 +51,7 @@ public:
         bool& executionComplete,
         bool& optDebug,
         CommInpCfg& appConfig,
-        auto_ptr<DataSource> dataSource
+        DataSource* dataSource
     );
     ~PB5CollectionProcess() throw();
     virtual void init(int argc, char* argv[]) throw (exception);
