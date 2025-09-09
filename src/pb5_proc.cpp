@@ -19,8 +19,7 @@ PB5CollectionProcess::PB5CollectionProcess(
     bool& executionComplete,
     bool& optDebug,
     CommInpCfg& appConfig,
-    DataSource* dataSource) :
-    dataSource__(dataSource),             // 1st
+    string connection_string) :
     appConfig__(appConfig),              // 2nd
     IObuf__(8192, 512),                  // 3rd
     pakCtrlImplObj__(),                  // 4th (default-initialized)
@@ -34,6 +33,8 @@ PB5CollectionProcess::PB5CollectionProcess(
     has_table_spec(false)                // 12th
 
 {
+    mkfifo(pipe_name.c_str(),S_IWUSR|S_IRUSR); // Make pipe. Read/write for owner
+    dataSource__ = appConfig__.getDataSource(connection_string);
 }
 
 PB5CollectionProcess :: ~PB5CollectionProcess() throw ()
@@ -58,7 +59,7 @@ void PB5CollectionProcess :: init(int argc, char* argv[])
 
 bool compareSampleInts(const TableOpt& lhs, const TableOpt& rhs){
     return lhs.SampleInt<rhs.SampleInt;
-};
+}
 /**
  * Gets the smallest sample interval of all the configured tables(seconds)
  */
