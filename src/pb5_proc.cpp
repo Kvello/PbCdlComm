@@ -33,7 +33,7 @@ PB5CollectionProcess::PB5CollectionProcess(
     has_table_spec(false)                // 12th
 
 {
-    mkfifo(pipe_name.c_str(),S_IWUSR|S_IRUSR); // Make pipe. Read/write for owner
+    // mkfifo(pipe_name.c_str(),S_IWUSR|S_IRUSR); // Make pipe. Read/write for owner
     dataSource__ = appConfig__.getDataSource(connection_string);
 }
 
