@@ -14,8 +14,16 @@ using namespace log4cpp;
 // TODO - Set vtime through configuration file 
 // TODO - Persist connection settings 
 
-PB5CollectionProcess :: PB5CollectionProcess() : IObuf__(8192, 512), 
-        optDebug__(false), optCleanAppCache__(false)
+PB5CollectionProcess :: PB5CollectionProcess(
+    string pipe_name, 
+    string separator,
+    bool& executionComplete,
+    bool& optDebug,
+    CommInpCfg& appConfig,
+    auto_ptr<DataSource> dataSource) : 
+IObuf__(8192, 512), optCleanAppCache__(false), has_table_spec(false),
+bmp5ImplObj__(pipe_name,separator),executionComplete__(executionComplete),
+optDebug__(optDebug), appConfig__(appConfig), dataSource__(dataSource__)
 {
 }
 
@@ -35,91 +43,21 @@ void PB5CollectionProcess :: init(int argc, char* argv[])
     throw (exception)
 {
     executionComplete__ = false;
-    parseCommandLineArgs(argc, argv);
     configure();
 }
 
+
+bool compareSampleInts(const TableOpt& lhs, const TableOpt& rhs){
+    return lhs.SampleInt<rhs.SampleInt;
+};
 /**
- * Function to parse the command line inputs and appropriately update/initialize
- * various class members and set logging destination.
+ * Gets the smallest sample interval of all the configured tables(seconds)
  */
-void PB5CollectionProcess :: parseCommandLineArgs(int argc, char* argv[])
-    throw (exception)
-{
-    char optstring[] = "c:p:w:drvh";
-    string      configFilePath, workingPath, connectionString;
-    int         cmd_opt;
-    bool        optDisplayHelp = false;
-    bool        optDisplayVersion = false;
-    bool        optRedirectLog(false);
-    stringstream msgstrm;
+int PB5CollectionProcess :: smallestTableInt(){
 
-    if (argc == 1) {
-        printHelp();
-        executionComplete__ = true;
-        return;
-    }
-
-    optDebug__ = false;
-
-    while((cmd_opt = getopt(argc, argv, optstring)) != -1) {
-        switch(cmd_opt) {
-            case 'c' : configFilePath = optarg;  break;
-            case 'd' : optDebug__ = true;       break;
-            case 'p' : connectionString = optarg;        break;
-            // case 'e' : optCleanAppCache__ = true;  break;
-                       // TODO implement the clean app cache option
-            case 'r' : optRedirectLog = true;     break;
-            case 'w' : workingPath = optarg;     break;
-            case 'h' : optDisplayHelp = true;  break;
-            case 'v' : optDisplayVersion = true;  break;
-            case '?' : throw invalid_argument("Invalid argument provided for initialization");
-        }
-    }
-
-    if (optDisplayHelp) {
-        printHelp();
-        executionComplete__ = true;
-        return;
-    }
-
-    if (optDisplayVersion) {
-        printVersion();
-        executionComplete__ = true;
-        return;
-    }
-
-    if (optDebug__) {
-        cout << "Enabling debug mode ..." << endl;
-        Category::getRoot().setPriority(Priority::DEBUG);
-    }
-    else {
-        Category::getRoot().setPriority(Priority::INFO);
-    }
-
-    try {
-        if (optRedirectLog) {
-            appConfig__.redirectLog();
-        }
-        cout << "============================================================" << endl;
-        printVersion();
-        cout << "============================================================" << endl;
-
-        Category::getInstance("Init").debug("Using configuration file : " + 
-                configFilePath);
-        appConfig__.loadConfig ((char *)configFilePath.c_str());
-
-        dataSource__ = appConfig__.getDataSource(connectionString);
-
-    } catch (exception& e) {
-        throw AppException(__FILE__, __LINE__, e.what());
-    }
-
-    if (workingPath.size()) {
-        appConfig__.setWorkingPath(workingPath);
-    }
-
-    return;
+    vector<TableOpt> tables = appConfig__.getDataOutputConfig().Tables;
+    vector<TableOpt>::iterator it = min_element(tables.begin(),tables.end(),compareSampleInts);
+    return it->SampleInt;
 }
 
 /**
@@ -196,16 +134,19 @@ void PB5CollectionProcess :: initSession(int nTry) throw (AppException)
         pakCtrlImplObj__.HelloTransaction();
         pakCtrlImplObj__.HandShake(SERPKT_RING);
 
-        try {
-            checkLoggerTime();
-            bmp5ImplObj__.getDataDefinitions();
-        } 
-        catch (IOException& ioe) {
-            throw;
-        }
-        catch (AppException& e) {
-            pakCtrlImplObj__.HandShake(SERPKT_FINISHED);
-            throw;
+        if(!has_table_spec){
+            try {
+                checkLoggerTime();
+                bmp5ImplObj__.getDataDefinitions();
+            } 
+            catch (IOException& ioe) {
+                throw;
+            }
+            catch (AppException& e) {
+                pakCtrlImplObj__.HandShake(SERPKT_FINISHED);
+                throw;
+            }
+            has_table_spec=true;
         }
         pakCtrlImplObj__.HandShake(SERPKT_FINISHED);
 
@@ -350,32 +291,9 @@ void PB5CollectionProcess :: onExit() throw ()
     unlink (lockFilePath__.c_str());
 }
 
-void PB5CollectionProcess :: printHelp() throw ()
-{
-    cout << endl;
-    printVersion();
-    cout << "  Data Collection Software for PakBus Loggers                " << endl;
-    cout << "  Usage : " << PB5_APP_NAME;
-    cout << "  Options :                                                  " << endl;
-    cout << "     -c Complete path of the collection configuration file   " << endl;
-    cout << "     -d Turn on debugging to print packet level errors       " << endl;
-    // cout << "     -e Erase application cache                              " << endl;
-    cout << "     -w Override the working path mentioned in config file   " << endl;
-    cout << "     -r Redirect log msgs to a file instead of stdout. The   " << endl;
-    cout << "        logs will be stored in the <workingPath> directory   " << endl;
-    cout << "     -h Print this help message                              " << endl;
-    cout << "     -v Print version information                            " << endl;
-    cout << endl;
 
-    return;
 
-}
 
-void PB5CollectionProcess :: printVersion() throw ()
-{
-   cout << " " << PB5_APP_NAME << " Version : " << PB5_APP_VERS << endl;
-   return;
-}
 
 void PB5CollectionProcess :: checkLoggerTime() throw (AppException)
 {
