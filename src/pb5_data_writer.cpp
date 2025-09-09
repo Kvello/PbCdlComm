@@ -28,7 +28,7 @@ CharacterOutputWriter :: CharacterOutputWriter(const string pipe_name, string se
 seperator__(sep), recordCount__(0)
 {
     dataFileStream__.exceptions(ofstream::badbit | ofstream::failbit); 
-    dataFileStream__.open(pipe_name.c_str());
+    dataFileStream__.open(pipe_name.c_str(),ios_base::app);
 }
 
 /**
