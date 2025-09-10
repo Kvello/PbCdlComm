@@ -111,8 +111,6 @@ class CommInpCfg {
         int      redirectLog();
 
     protected :
-        void loadCollectionConfig (const char *filename) 
-                throw (AppException);
         void loadSerialConfig (const xmlNodePtr node) 
                 throw (AppException);
         void loadDataOutputConfig (const xmlNodePtr node) throw (AppException);

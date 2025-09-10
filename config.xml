@@ -16,7 +16,7 @@
 <!--Data output options -->
 <DATA>
 <WORKING_PATH>
-/data/collection/rld/rldmfrsrS1.00/collecting/.pbcdl_comm
+./data
 </WORKING_PATH>
 <!--
 Add a table entry to collect data from it. The 
@@ -28,11 +28,6 @@ update frequency, which is used to determine if a data
 file is complete and be moved up from the 
 .../.working directory. 
 -->
-<COLLECT_TABLE>
-<TABLE sample_int_secs="60" file_span_secs="120">
-OneMin
-</TABLE>
-</COLLECT_TABLE>
 </DATA>
 <!--PakBus protocol settings -->
 <!-- The following are default values -->

@@ -36,8 +36,8 @@ using namespace log4cpp;
  * @param: Structure containing information about data directory, logger name,
  *         name of tables to collect and the station name.
  */
-BMP5Obj :: BMP5Obj () : PakBusMsg(), dataBufSize__(BMP5_BUFLEN), 
-        tblDataMgr__(NULL) 
+BMP5Obj :: BMP5Obj (const string separator,const string working_path) : 
+PakBusMsg(), dataBufSize__(BMP5_BUFLEN), tblDataMgr__(separator,working_path)
 {
     HiProtoCode__ = 0x01;
     dataBuf__ = new byte[dataBufSize__];
@@ -50,7 +50,7 @@ BMP5Obj :: ~BMP5Obj()
     }
 }
 
-void BMP5Obj :: setTableDataManager(TableDataManager* tblDataMgr)
+void BMP5Obj :: setTableDataManager(TableDataManager& tblDataMgr)
 {
     tblDataMgr__ = tblDataMgr;
 }
@@ -135,12 +135,12 @@ BMP5Obj :: ClockTransaction (uint4 secs, uint4 nsecs)
  * @return Throws AppException on failure.
  */
 void 
-BMP5Obj :: getDataDefinitions() throw (IOException, ParseException)
+BMP5Obj :: getDataDefinitions() throw ( ParseException)
 {
     this->GetTDF();
     this->GetProgStats((uint2)0);
 
-    int maxRecordSize = tblDataMgr__->getMaxRecordSize();
+    int maxRecordSize = tblDataMgr__.getMaxRecordSize();
     if (maxRecordSize > dataBufSize__) {
         delete [] dataBuf__;
         dataBufSize__ = maxRecordSize;
@@ -149,42 +149,27 @@ BMP5Obj :: getDataDefinitions() throw (IOException, ParseException)
     return;
 }
 
-void 
-BMP5Obj :: GetTDF () throw (IOException, ParseException)
+void BMP5Obj :: GetTDF ()
 {
     int    stat;
-    string tdf_file = tblDataMgr__->getDataOutputConfig().WorkingPath;
-    tdf_file += "/.working/tdf.dat";
+    string tdf_file = tblDataMgr__.getDataOutputConfig().WorkingPath;
+    stringstream table_structure;
+    table_structure.exceptions(stringstream::failbit);
 
-    string tdf_file_tmp = tdf_file;
-    tdf_file_tmp += ".tmp";
+    Category::getInstance("BMP5")
+            .info("Uploading table definitions file from the logger ...");
 
-    if ( (stat = tblDataMgr__->BuildTDF()) == FAILURE ) {
+    if (UploadFile(".TDF", table_structure) == FAILURE) {
+        throw ParseException(__FILE__, __LINE__,
+                "TDF parsing failed due to failure in uploading file");
+    }
 
+    stat = tblDataMgr__.BuildTDF(table_structure);
+    if (stat == FAILURE) {
         Category::getInstance("BMP5")
-                .info("Uploading table definitions file from the logger ...");
-
-        if (UploadFile(".TDF", (char *)tdf_file_tmp.c_str()) == FAILURE) {
-            throw ParseException(__FILE__, __LINE__,
-                    "TDF parsing failed due to failure in uploading file");
-        }
-
-        int renameStatus = rename(tdf_file_tmp.c_str(), tdf_file.c_str());
-        if (renameStatus != 0) {
-            Category::getInstance("BMP5")
-                     .error("Failed to rename temporary file to : " + tdf_file);
-            unlink(tdf_file_tmp.c_str());
-            throw IOException (__FILE__, __LINE__,
-                    "TDF parsing failed due to rename error");
-        }
-
-        stat = tblDataMgr__->BuildTDF();
-        if (stat == FAILURE) {
-            Category::getInstance("BMP5")
-                     .info("Failed to parse TDF file following download from logger");
-            throw ParseException (__FILE__, __LINE__,
-                    "Failed to parse TDF file following download from logger");
-        }
+                    .info("Failed to parse TDF file following download from logger");
+        throw ParseException (__FILE__, __LINE__,
+                "Failed to parse TDF file following download from logger");
     }
     return;
 }
@@ -192,7 +177,6 @@ BMP5Obj :: GetTDF () throw (IOException, ParseException)
 int 
 BMP5Obj :: ReloadTDF () 
 {
-    tblDataMgr__->cleanCache();
     Category::getInstance("BMP5")
             .info("Recollecting table definitions file from data logger");
 
@@ -302,18 +286,16 @@ BMP5Obj :: DownloadFile (const char *filename)
  * @param get_file: File to upload from logger to host. This should
  *                  include the complete pathname (i.e. CPU:Def.TDF 
  *                  instead of Def.TDF.
- * @param write_to_file: Complete path of the destination filename on 
- *                  host.
+ * @param out_stream: An ostream where the data will be stored (in memory)
  * @return SUCCESS | FAILURE
  */ 
 int 
-BMP5Obj :: UploadFile (const char *get_file, char *write_to_file) throw (IOException)
+BMP5Obj :: UploadFile (const char *get_file, ostream& out_stream) throw (IOException)
 {
     int      len, stat = FAILURE;
     uint4    file_offset = 0;
     uint4    file_datalen = 0;
     Packet   pack;
-    ofstream TDFdata;
     bool     ioException = false;
     
     // Maximum number of bytes that can be packed in a PakBus message
@@ -346,16 +328,7 @@ BMP5Obj :: UploadFile (const char *get_file, char *write_to_file) throw (IOExcep
 
     MsgBodyLen__ = len+10;
 
-    TDFdata.open (write_to_file, ofstream::binary | ofstream::out);
     
-    if (TDFdata.is_open() == false) {
-        string err("Failed to open : ");
-        err.append(write_to_file);
-        Category::getInstance("BMP5")
-                 .error(err);
-        throw IOException(__FILE__, __LINE__, err.c_str());
-    }
-
     while (1) {
         PBSerialize (MsgBody__+len+4, (uint4)file_offset, 4);
 
@@ -385,16 +358,7 @@ BMP5Obj :: UploadFile (const char *get_file, char *write_to_file) throw (IOExcep
                 PacketErr ("File Upload Transaction", pack, stat);
             }
             else {
-                try {
-                    file_datalen = process_upload_file (pack, TDFdata);
-                } 
-                catch (IOException& ioe) {
-                    string err("I/O error occurred while writing to : ");
-                    err.append(write_to_file);
-                    Category::getInstance("BMP5").warn(err);
-                    ioException = true;
-                    break;
-                }
+                file_datalen = process_upload_file (pack, out_stream);
                 file_offset += file_datalen;
             }
             packetQueue__->pop_front ();
@@ -417,15 +381,6 @@ BMP5Obj :: UploadFile (const char *get_file, char *write_to_file) throw (IOExcep
                 sleep (1);
             }
         }
-    }
-    
-    TDFdata.close ();
-
-    if (ioException) {
-        string err("Removing possibly corrupted file : ");
-        err.append(write_to_file);
-        Category::getInstance("BMP5").notice(err);
-        unlink(write_to_file);
     }
     
     if (ioException || (file_offset == 0) || stat) {
@@ -462,7 +417,7 @@ BMP5Obj :: UploadFile (const char *get_file, char *write_to_file) throw (IOExcep
  * the packet. 0 is returned to indicate error conditions.
  */
 int 
-BMP5Obj :: process_upload_file (Packet& pack, ofstream& filedata) throw (IOException)
+BMP5Obj :: process_upload_file (Packet& pack, ostream& out_data) throw (IOException)
 {
     byte *pack_ptr = (byte *)(pack.begPacket + 11);
     string errormsg;
@@ -486,11 +441,7 @@ BMP5Obj :: process_upload_file (Packet& pack, ofstream& filedata) throw (IOExcep
 
     int file_data_len = pack.endPacket - (char *)pack_ptr - 2;
     // Need to subtract the signature length as well
-    filedata.write ((const char *)pack_ptr, file_data_len);
-    filedata.flush();
-    if (filedata.bad()) {
-        throw IOException(__FILE__, __LINE__, "I/O error");
-    }
+    out_data.write ((const char *)pack_ptr, file_data_len);
     return file_data_len;
 }
 
@@ -510,7 +461,7 @@ BMP5Obj :: process_upload_file (Packet& pack, ofstream& filedata) throw (IOExcep
  * @return Returns -1 if an invalud collection mode is specified.
  */
 int 
-BMP5Obj :: sendCollectionCmd (byte message_type, Table& tbl, uint4 P1, uint4 P2)
+BMP5Obj :: sendCollectionCmd (byte message_type, const Table& tbl, uint4 P1, uint4 P2)
 {
     Priority__ = 0x02;
     MsgType__  = 0x09;
@@ -579,21 +530,17 @@ BMP5Obj :: sendCollectionCmd (byte message_type, Table& tbl, uint4 P1, uint4 P2)
  *             extracted from byte sequence and stored.
  * @param beg: Record number of the first data record to extract.
  * @param nrecs: Number of records to extract.
- * @param file_span: Span of a datafile in seconds.
  * @return stat: Returns status to indicate if the data extraction and storage
  *             was successful.
  */
 int 
-BMP5Obj :: store_data (byte* buf, Table& tbl, int beg, int nrecs,
-        int file_span) throw (StorageException)
+BMP5Obj :: store_data (byte* buf, Table& tbl, int beg, int nrecs) throw (StorageException)
 {
     int stat = FAILURE;
-    bool parseTimestamp = true;
     int rec_num = 0;
     while (rec_num < nrecs) {
         try {
-            stat = tblDataMgr__->storeRecord (tbl, &buf, beg+rec_num, file_span, 
-                    parseTimestamp);
+            stat = tblDataMgr__.storeRecord (tbl, &buf, beg+rec_num);
         } catch (StorageException& e) {
             Category::getInstance("BMP5")
                      .error("Caught exception while storing data for " + tbl.TblName);
@@ -601,7 +548,6 @@ BMP5Obj :: store_data (byte* buf, Table& tbl, int beg, int nrecs,
                      .error(e.what()); 
             throw;
         }
-        parseTimestamp = false;
         if (stat == FAILURE) {
             break;
         }
@@ -610,6 +556,75 @@ BMP5Obj :: store_data (byte* buf, Table& tbl, int beg, int nrecs,
     return stat;
 }
 
+const vector<Table>& BMP5Obj::getTableDefinitions(){
+    return tblDataMgr__.getTables();
+}
+void BMP5Obj::writeData(){
+    vector<Table>& tables_ref = tblDataMgr__.getTables();
+    int numTables = tables_ref.size();
+
+    bool recollect_tdf = false;
+    if (0 == numTables) {
+        Category::getInstance("Collect")
+                 .info("No tables listed for data collection.");
+        return;
+    }
+    stringstream msgstrm;
+    for (int count = 0; count < numTables; count++) {
+
+        cout << endl;
+        msgstrm << "Downloading data from " <<tables_ref[count].TblName;
+        Category::getInstance("Collect")
+                 .notice(msgstrm.str());
+        msgstrm.str("");
+
+        try {
+            CollectData(tables_ref[count]);
+        }
+        catch (invalid_argument& iae) {
+            msgstrm << "No data was downloaded for [" 
+                    << tables_ref[count].TblName;
+            Category::getInstance("Collect").error(msgstrm.str()); 
+            msgstrm.str("");
+        }
+        catch (StorageException& ioe) {
+            Category::getInstance("Collect")
+                     .error("Aborting data collection process.");
+            break;
+        }
+        catch (InvalidTDFException& ite) {
+
+            // The problem might be caused by a corrupt/modified
+            // table definition file. Therefore, recollect the file.
+
+            if (recollect_tdf == false) {
+                Category::getInstance("MAIN")
+                        .info("Retrying data collection by reloading TDF");
+                if (ReloadTDF() == SUCCESS) {
+                        // Decrement the count to take another shot
+                        count--;
+                }
+                recollect_tdf = true;
+            }
+            else {
+                Category::getInstance("Collect")
+                         .error("Still receiving INVALID TDF error msg after reloading TDF");
+                break;
+            }
+        }
+        catch (AppException& e1) {
+
+            msgstrm << tables_ref[count].TblName << " --> " << e1.what();
+            Category::getInstance("Collect").error(msgstrm.str());
+            msgstrm.str("");
+
+            msgstrm << "Data collection failed for : ["
+                    << tables_ref[count].TblName << "]";
+            Category::getInstance("Collect").error(msgstrm.str()); 
+            msgstrm.str("");
+        }
+    }
+}
 /**
  * Function to collect data from a specified table. 
  * First a message is sent to the data logger to query about the last stored
@@ -626,9 +641,9 @@ BMP5Obj :: store_data (byte* buf, Table& tbl, int beg, int nrecs,
  * @param span: Span of datafile in seconds
  * @return SUCCESS | FAILURE
  */
-int 
-BMP5Obj :: CollectData (const TableOpt& table_opt) throw (AppException, invalid_argument)
+int BMP5Obj :: CollectData (Table& tbl_ref) throw (AppException, invalid_argument)
 {
+
     // bool     alloc_buffer = true;
     int      record_size;
     int      last_rec_nbr;
@@ -639,9 +654,7 @@ BMP5Obj :: CollectData (const TableOpt& table_opt) throw (AppException, invalid_
     stringstream msgstrm;
     RecordStat recordStat;
 
-    Table& tbl_ref = tblDataMgr__->getTableRef (table_opt.TableName);
-    
-    record_size = tblDataMgr__->getRecordSize (tbl_ref);
+    record_size = tblDataMgr__.getRecordSize(tbl_ref);
 
     // If there is a possibility of the data record be fragmented into multiple
     // packets, then allocate buffer memory to accumulate the data stored in 
@@ -671,8 +684,7 @@ BMP5Obj :: CollectData (const TableOpt& table_opt) throw (AppException, invalid_
         int numAttempts = 0;
         // get the last record number the logger is written in it's memory.
         while (numAttempts < 3) {
-            recordStat = get_records (tbl_ref, GET_LAST_REC | INQ_REC_INFO,
-                    record_size, 1, 0, table_opt.TableSpan);
+            recordStat = get_records (tbl_ref, GET_LAST_REC | INQ_REC_INFO, record_size, 1, 0);
             last_rec_nbr = recordStat.count;
             if (last_rec_nbr >= 0) {
                 break;
@@ -695,14 +707,18 @@ BMP5Obj :: CollectData (const TableOpt& table_opt) throw (AppException, invalid_
    
         msgstrm << "Record Index information :" << endl
                 << "\t\tIndex of last stored record on datalogger memory : " 
-                << last_rec_nbr << endl
-                << "\t\tIndex of next record to collect from datalogger memory : " 
-                << tbl_ref.NextRecord;
+                << last_rec_nbr << endl;
         Category::getInstance("BMP5")
                  .debug(msgstrm.str());
         msgstrm.str("");
          
-        records_pending = (int)(last_rec_nbr-tbl_ref.NextRecord);
+        //If we have not yet collected any records, and next_rec_nbr=-1, we assume there is exactly
+        // 1 new record. Note that this implies no fault tolerance if the system/program crashes (we can't know where we left off)
+        int next_rec_nbr = tblDataMgr__.getNextRecordNumber(tbl_ref);
+        if(next_rec_nbr==-1){
+            next_rec_nbr = last_rec_nbr;
+        }
+        records_pending = (int)(last_rec_nbr-next_rec_nbr);
 
         if  (records_pending < 0) {
 
@@ -710,10 +726,10 @@ BMP5Obj :: CollectData (const TableOpt& table_opt) throw (AppException, invalid_
             time_t t_c = (time_t)recordStat.recordTime.sec + SECS_BEFORE_1990;
 
             if (records_pending == -1) {
-                if (0 == nseccmp(tbl_ref.LastRecordTime, recordStat.recordTime)) {
+                if (tbl_ref.LastRecordTime == recordStat.recordTime) {
                     Category::getInstance("BMP5")
                          .info("No new data is available yet for : " 
-                                + table_opt.TableName);
+                                + tbl_ref.TblName);
                     return SUCCESS;
                 }
                 else {
@@ -727,12 +743,12 @@ BMP5Obj :: CollectData (const TableOpt& table_opt) throw (AppException, invalid_
                     msgstrm.str("");
                 }
             }
-            else if (nseccmp(tbl_ref.LastRecordTime, recordStat.recordTime) > 1) {
+            else if (tbl_ref.LastRecordTime>recordStat.recordTime) {
                 msgstrm << "Backward shift observed in datalogger clock." << endl
                         << "\tCheck data from table => " << tbl_ref.TblName << endl
                         << "\tTimestamp of last available data record in datalogger memory"
                         << "precedes the timestamp of the last collected record" << endl
-                        << "\tNext target record index : " << tbl_ref.NextRecord << endl
+                        << "\tNext target record index : " << next_rec_nbr << endl
                         << "\tTimestamp of last collected record from datalogger: " 
                         << ctime(&t_c)
                         << "\tIndex of last stored record in datalogger memory : " 
@@ -747,7 +763,7 @@ BMP5Obj :: CollectData (const TableOpt& table_opt) throw (AppException, invalid_
 
         // The following cases need special attention:
         // 1. The logger has written enough data since the last data collection so
-        //    that the record with ID tbl_ref.NextRecord is wiped from memory. In 
+        //    that the record with ID next_rec_nbr is wiped from memory. In 
         //    this case, we need to set the "begin pointer" at the beginning of the
         //    table.
         // 2. The data collection downtime can be long enough so that the logger 
@@ -759,29 +775,25 @@ BMP5Obj :: CollectData (const TableOpt& table_opt) throw (AppException, invalid_
                     << "\tTable(" << tbl_ref.TblName << ") size: "
                     << tbl_ref.TblSize << " records" << endl
                     << "\tLast stored record id : " << last_rec_nbr << endl
-                    << "\tLast collected record id : " << tbl_ref.NextRecord << endl;
+                    << "\tLast collected record id : " << next_rec_nbr << endl;
 
             int newIndex = last_rec_nbr - tbl_ref.TblSize + 2;
       
-            tbl_ref.NextRecord = (newIndex < 0) ? 1 : ((uint4)newIndex);
+            next_rec_nbr = (newIndex < 0) ? 1 : ((uint4)newIndex);
 
             msgstrm << "\tAdvancing next collection record to : ";
-            msgstrm << tbl_ref.NextRecord << endl;
+            msgstrm << next_rec_nbr << endl;
 
             Category::getInstance("BMP5").info(msgstrm.str());
             msgstrm.str("");
          
-            // Reset all the history for this Table
-            if (tbl_ref.NewFileTime) {
-                tblDataMgr__->flushTableDataCache(tbl_ref);
-            }
         }
     
         // If the temporary data file for this table already exists, 
         // append to it. Else, a new file will be created.
     
         //TODO set the fileSpan/reportSpan here and remove from the get_records call
-        tblDataMgr__->getTableDataWriter()->initWrite(tbl_ref);
+        tblDataMgr__.initWrite(tbl_ref.TblName);
 
        /*
         * Main collection loop
@@ -791,20 +803,20 @@ BMP5Obj :: CollectData (const TableOpt& table_opt) throw (AppException, invalid_
         int countBadRecordCollAttempt = 0;
         int MAX_BAD_REC_COLL_REATTEMPT = 2;
 
-        while (tbl_ref.NextRecord <= (uint4) last_rec_nbr) 
+        while (next_rec_nbr <= last_rec_nbr) 
         {
             recordStat = get_records (tbl_ref, GET_DATA_RANGE | STORE_DATA,
-                    record_size, tbl_ref.NextRecord, 
-                    tbl_ref.NextRecord + recs_per_request, table_opt.TableSpan);
+                    record_size, next_rec_nbr, 
+                    next_rec_nbr + recs_per_request);
             nrecs_read = recordStat.count;
 
             if (nrecs_read < 0) {
                 break;
             }
             else if (nrecs_read == 0) {
-                if (lastBadRecordIndex != tbl_ref.NextRecord) {
+                if (lastBadRecordIndex != next_rec_nbr) {
                     countBadRecordCollAttempt += 1;
-                    lastBadRecordIndex = tbl_ref.NextRecord;
+                    lastBadRecordIndex = next_rec_nbr;
                 }
                 else if (countBadRecordCollAttempt < MAX_BAD_REC_COLL_REATTEMPT) {
                     countBadRecordCollAttempt++;
@@ -812,40 +824,41 @@ BMP5Obj :: CollectData (const TableOpt& table_opt) throw (AppException, invalid_
                 else {
                     countBadRecordCollAttempt = 0;
                     msgstrm << "Failed to collect record with index " 
-                            << tbl_ref.NextRecord << " (" << (MAX_BAD_REC_COLL_REATTEMPT+1)
+                            << next_rec_nbr << " (" << (MAX_BAD_REC_COLL_REATTEMPT+1)
                             << " attempts failed)";
                     Category::getInstance("BMP5")
                              .error(msgstrm.str());
                     msgstrm.str("");
  
-                    tbl_ref.NextRecord += 1;
+                    next_rec_nbr += 1;
                     msgstrm << "Advancing collection to record index : "
-                            << tbl_ref.NextRecord;
+                            << next_rec_nbr;
                     Category::getInstance("BMP5")
                              .notice(msgstrm.str());
                     msgstrm.str("");
                 } 
             }
             else {
-                // tbl_ref.NextRecord += nrecs_read;
+                // next_rec_nbr += nrecs_read;
                 num_collected_recs += nrecs_read;
+                next_rec_nbr += num_collected_recs;
             }
         }
        
-        tblDataMgr__->getTableDataWriter()->finishWrite(tbl_ref);
+        tblDataMgr__.finishWrite(tbl_ref.TblName);
     }
     else {
         //
         // For the case where TblSize (number of records in a table)
         // is not known
         //
-        tblDataMgr__->getTableDataWriter()->initWrite(tbl_ref);
+        tblDataMgr__.initWrite(tbl_ref.TblName);
 
         recordStat = get_records (tbl_ref, GET_LAST_REC | STORE_DATA,
-                record_size, 1, 0, table_opt.TableSpan);
+                record_size, 1, 0);
         num_collected_recs = recordStat.count;
        
-        tblDataMgr__->getTableDataWriter()->finishWrite(tbl_ref);
+        tblDataMgr__.finishWrite(tbl_ref.TblName);
     }
 
     if (get_debug()) {
@@ -859,13 +872,6 @@ BMP5Obj :: CollectData (const TableOpt& table_opt) throw (AppException, invalid_
         delete [] dataBuf__;
     }*/
 
-    if ((table_opt.SampleInt >= 0) && (tbl_ref.LastRecordTime.sec > 0)) {
-        if ((tbl_ref.LastRecordTime.sec + table_opt.SampleInt) 
-                >= tbl_ref.NewFileTime) {
-            tblDataMgr__->flushTableDataCache(tbl_ref);
-        }
-    }
-    
     // A negative nrecs_read indicates some sort of error in data collection
     if (nrecs_read >= 0) {
         return SUCCESS;
@@ -1086,7 +1092,7 @@ BMP5Obj :: GetProgStats (uint2 security_code) throw (ParseException)
                 pack_ptr += prog_stat.ProgName.size() + 1;
   
                 prog_stat.ProgSig = (uint2) PBDeserialize (pack_ptr, 2);
-                tblDataMgr__->setProgStats (prog_stat);
+                tblDataMgr__.setProgStats (prog_stat);
             }
         } 
 
@@ -1125,7 +1131,7 @@ BMP5Obj :: GetProgStats (uint2 security_code) throw (ParseException)
  */
 RecordStat 
 BMP5Obj :: get_records (Table& tbl_ref, byte start_mode, int record_size, 
-        uint4 P1, uint4 P2, int span)
+        uint4 P1, uint4 P2)
 {
     uint4  beg_rec_nbr = 0xffffffff;
     NSec   beg_rec_time;
@@ -1217,8 +1223,7 @@ BMP5Obj :: get_records (Table& tbl_ref, byte start_mode, int record_size,
                 if (record_size == -1) {
                     if (pack_data_len < 512) {
                         if (store_mode) {
-                            stat = store_data (dataBuf__, tbl_ref, beg_rec_nbr, 
-                                    1, span); 
+                            stat = store_data (dataBuf__, tbl_ref, beg_rec_nbr, 1); 
                             if (SUCCESS == stat) {
                                 num_recs = 1;
                             }
@@ -1233,8 +1238,7 @@ BMP5Obj :: get_records (Table& tbl_ref, byte start_mode, int record_size,
                     data_len += pack_data_len; 
                     if (data_len >= record_size) {
                         if (store_mode) {
-                            stat = store_data (dataBuf__, tbl_ref, beg_rec_nbr, 
-                                    1, span); 
+                            stat = store_data (dataBuf__, tbl_ref, beg_rec_nbr, 1); 
                             if (SUCCESS == stat) {
                                 num_recs = 1;
                             }
@@ -1251,8 +1255,7 @@ BMP5Obj :: get_records (Table& tbl_ref, byte start_mode, int record_size,
                 if (store_mode) {
                     num_recs = (uint2) PBDeserialize ((byte *)(pack.begPacket+18), 2);
                     num_recs &= 0x7fff;
-                    stat = store_data ((byte *)(pack.begPacket+20), tbl_ref, 
-                               beg_rec_nbr, num_recs, span);
+                    stat = store_data ((byte *)(pack.begPacket+20), tbl_ref, beg_rec_nbr, num_recs);
                 }
                 pending = false;
             }
@@ -1288,7 +1291,7 @@ BMP5Obj :: get_records (Table& tbl_ref, byte start_mode, int record_size,
  * @return SUCCESS | FAILURE
  */
 int 
-BMP5Obj :: test_data_packet (Table& tbl_ref, Packet& pack) throw (AppException)
+BMP5Obj :: test_data_packet (const Table& tbl_ref, Packet& pack) throw (AppException)
 {
     byte* ptr = (byte *)(pack.begPacket + 11);
 

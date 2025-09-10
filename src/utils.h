@@ -18,10 +18,37 @@
 #include <string>
 #include <string.h>
 #include <cstring>
+#include <cmath>
 #include <exception>
 #include <stdlib.h>
+#include <vector>
 #include <libxml2/libxml/tree.h>
 using namespace std;
+
+typedef unsigned short uint2;
+typedef unsigned int   uint4;
+typedef unsigned char  byte;
+/**
+ * Structure representing a data field or variable whose members mirror the
+ * the storage format for storing the metadata for a field in datalogger memory.
+ */
+struct Field {
+    Field() : FieldType(0), NullByte(0), BegIdx((uint4)0), 
+            Dimension((uint4)0), SubDimListTerm((uint4)0) {}
+    byte   FieldType;
+    string FieldName;
+    byte   NullByte;
+    string Processing;
+    string Unit;
+    string Description;
+    uint4  BegIdx;
+    uint4  Dimension;
+    vector<uint4>  SubDim;
+    uint4  SubDimListTerm;
+
+    string getProperty(int infoType, int dim) const;
+} ;
+
 
 /**
  * @fn Function
@@ -121,5 +148,8 @@ int byte2int(char c);
 void setSignalHandler(void (*exit_handler)(int signum));
 void printSigInfo(int signum);
 void printStackTrace();
-
+string GetFixedLenString (const byte *str_ptr, const Field& var);
+float GetFinalStorageFloat (uint2 unum);
+string GetVarLenString(const byte *str_ptr);
+const char* getDataType (const Field& var);
 #endif

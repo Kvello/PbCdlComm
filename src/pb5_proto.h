@@ -17,6 +17,7 @@
 
 #include "pb5_buf.h"
 #include "pb5_data.h"
+#include <ostream>
 
 const uint2 Seed = 0xaaaa;
 const byte  SerSyncByte__ = 0xbd;
@@ -185,37 +186,40 @@ struct RecordStat {
 class BMP5Obj : public PakBusMsg {
 
     public :
-        BMP5Obj ();
+        BMP5Obj ( const string separator, const string working_path);
         // BMP5Obj (PBAddr* pb_addr, pakbuf* IOBuf, string appl_dir);
-	~BMP5Obj ();
-        void  setTableDataManager(TableDataManager* tblDataMgr);
-        void  getDataDefinitions() throw (IOException, ParseException);
+        ~BMP5Obj ();
+        void  setTableDataManager(TableDataManager& tblDataMgr);
+        void  getDataDefinitions() throw (ParseException);
         int   ClockTransaction (uint4 offset_s, uint4 offset_ns);
-        int   UploadFile (const char* get_file, char* write_to_file)
-                throw (IOException);
+        int   UploadFile (const char *get_file, ostream& out_stream) throw (IOException);
         int   DownloadFile (const char *filename);
-        int   CollectData (const TableOpt& table_opt) 
-                      throw (AppException, invalid_argument);
-	int   ControlTable (byte ctrl_opt);
+        int   CollectData (Table& tbl_ref) throw (AppException, invalid_argument);
+        int   ControlTable (byte ctrl_opt);
         int   ControlFile (const string& file_name, byte file_cmd);
         int   ReloadTDF ();
+        void setDataOutputConfig(const DataOutputConfig& data_opt){
+            tblDataMgr__.setDataOutputConfig(data_opt);
+        }
+        void writeData();
+        const vector<Table>& getTableDefinitions();
  
     protected :
         void  GetProgStats (uint2 security_code) throw (ParseException);
-        void  GetTDF () throw (IOException, ParseException);
-        int   sendCollectionCmd (byte MessageType, Table& tbl, uint4 P1, uint4 P2);
+        void  GetTDF ();
+        int   sendCollectionCmd (byte MessageType, const Table& tbl, uint4 P1, uint4 P2);
         RecordStat get_records (Table& tbl_ref, byte mode, int record_size, 
-                uint4 P1, uint4 P2, int file_span);
-        int   test_data_packet (Table& tbl_ref, Packet& pack) throw (AppException);
-        int   store_data (byte* buf, Table& tbl, int beg, int nrecs, int file_span)
+                uint4 P1, uint4 P2);
+        int   test_data_packet (const Table& tbl_ref, Packet& pack) throw (AppException);
+        int   store_data (byte* buf, Table& tbl, int beg, int nrecs)
                 throw (StorageException);
-        int   process_upload_file (Packet& pack, ofstream& filedata) 
+        int   process_upload_file (Packet& pack, ostream& filedata) 
                 throw (IOException);
     
     private :
+        TableDataManager tblDataMgr__;
         byte*     dataBuf__;
         int       dataBufSize__;
-        TableDataManager* tblDataMgr__;
 };
 
 #define SUCCESS             0

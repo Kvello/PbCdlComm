@@ -13,10 +13,29 @@ using namespace log4cpp;
 
 // TODO - Set vtime through configuration file 
 // TODO - Persist connection settings 
+PB5CollectionProcess::PB5CollectionProcess(
+    string separator,
+    bool& executionComplete,
+    bool& optDebug,
+    CommInpCfg& appConfig,
+    string connection_string,
+    const int next_record_number
+) :
+    appConfig__(appConfig),              // 2nd
+    IObuf__(8192, 512),                  // 3rd
+    pakCtrlImplObj__(),                  // 4th (default-initialized)
+    bmp5ImplObj__(separator,appConfig.getDataOutputConfig().WorkingPath), // 5th
+    lockFilePath__(),                    // 6th (default-initialized)
+    optDebug__(optDebug),                // 7th
+    optCleanAppCache__(false),           // 8th
+    executionComplete__(executionComplete), // 9th
+    loggerTimeCheckComplete__(false),    // 10th (default-initialized)
+    msgstrm(),                           // 11th (default-initialized)
+    has_table_spec(false)                // 12th
 
-PB5CollectionProcess :: PB5CollectionProcess() : IObuf__(8192, 512), 
-        optDebug__(false), optCleanAppCache__(false)
 {
+    // mkfifo(pipe_name.c_str(),S_IWUSR|S_IRUSR); // Make pipe. Read/write for owner
+    dataSource__ = appConfig__.getDataSource(connection_string);
 }
 
 PB5CollectionProcess :: ~PB5CollectionProcess() throw ()
@@ -35,91 +54,20 @@ void PB5CollectionProcess :: init(int argc, char* argv[])
     throw (exception)
 {
     executionComplete__ = false;
-    parseCommandLineArgs(argc, argv);
     configure();
 }
 
+
+bool compareSampleInts(const Table& lhs, const Table& rhs){
+    return lhs.TblTimeInterval<rhs.TblTimeInterval;
+}
 /**
- * Function to parse the command line inputs and appropriately update/initialize
- * various class members and set logging destination.
+ * Gets the smallest sample interval of all the configured tables(seconds)
  */
-void PB5CollectionProcess :: parseCommandLineArgs(int argc, char* argv[])
-    throw (exception)
-{
-    char optstring[] = "c:p:w:drvh";
-    string      configFilePath, workingPath, connectionString;
-    int         cmd_opt;
-    bool        optDisplayHelp = false;
-    bool        optDisplayVersion = false;
-    bool        optRedirectLog(false);
-    stringstream msgstrm;
-
-    if (argc == 1) {
-        printHelp();
-        executionComplete__ = true;
-        return;
-    }
-
-    optDebug__ = false;
-
-    while((cmd_opt = getopt(argc, argv, optstring)) != -1) {
-        switch(cmd_opt) {
-            case 'c' : configFilePath = optarg;  break;
-            case 'd' : optDebug__ = true;       break;
-            case 'p' : connectionString = optarg;        break;
-            // case 'e' : optCleanAppCache__ = true;  break;
-                       // TODO implement the clean app cache option
-            case 'r' : optRedirectLog = true;     break;
-            case 'w' : workingPath = optarg;     break;
-            case 'h' : optDisplayHelp = true;  break;
-            case 'v' : optDisplayVersion = true;  break;
-            case '?' : throw invalid_argument("Invalid argument provided for initialization");
-        }
-    }
-
-    if (optDisplayHelp) {
-        printHelp();
-        executionComplete__ = true;
-        return;
-    }
-
-    if (optDisplayVersion) {
-        printVersion();
-        executionComplete__ = true;
-        return;
-    }
-
-    if (optDebug__) {
-        cout << "Enabling debug mode ..." << endl;
-        Category::getRoot().setPriority(Priority::DEBUG);
-    }
-    else {
-        Category::getRoot().setPriority(Priority::INFO);
-    }
-
-    try {
-        if (optRedirectLog) {
-            appConfig__.redirectLog();
-        }
-        cout << "============================================================" << endl;
-        printVersion();
-        cout << "============================================================" << endl;
-
-        Category::getInstance("Init").debug("Using configuration file : " + 
-                configFilePath);
-        appConfig__.loadConfig ((char *)configFilePath.c_str());
-
-        dataSource__ = appConfig__.getDataSource(connectionString);
-
-    } catch (exception& e) {
-        throw AppException(__FILE__, __LINE__, e.what());
-    }
-
-    if (workingPath.size()) {
-        appConfig__.setWorkingPath(workingPath);
-    }
-
-    return;
+int PB5CollectionProcess :: smallestTableInt(){
+    const vector<Table>& tables = bmp5ImplObj__.getTableDefinitions();
+    vector<Table>::const_iterator it = min_element(tables.begin(),tables.end(),compareSampleInts);
+    return static_cast<int>(it->TblTimeInterval.sec);
 }
 
 /**
@@ -133,6 +81,8 @@ void PB5CollectionProcess :: configure() throw (AppException)
     }
 
     appConfig__.dirSetup();
+
+    cout<<"Getting Lock File name"<<endl;
 
     string lockFilePath__ = dataSource__->getLockFileName(PB5_APP_NAME);
 
@@ -166,14 +116,13 @@ void PB5CollectionProcess :: configure() throw (AppException)
         IObuf__.setHexLogDir(dataOpt.WorkingPath);
     }
 
-    tblDataMgr__.setDataOutputConfig(dataOpt);
+    bmp5ImplObj__.setDataOutputConfig(dataOpt);
 
     pakCtrlImplObj__.setPakBusAddr(pbAddr);
     pakCtrlImplObj__.setIOBuf(&IObuf__);
    
     bmp5ImplObj__.setPakBusAddr(pbAddr);
     bmp5ImplObj__.setIOBuf(&IObuf__);
-    bmp5ImplObj__.setTableDataManager(&tblDataMgr__); 
 
     return;
 }
@@ -197,16 +146,19 @@ void PB5CollectionProcess :: initSession(int nTry) throw (AppException)
         pakCtrlImplObj__.HelloTransaction();
         pakCtrlImplObj__.HandShake(SERPKT_RING);
 
-        try {
-            checkLoggerTime();
-            bmp5ImplObj__.getDataDefinitions();
-        } 
-        catch (IOException& ioe) {
-            throw;
-        }
-        catch (AppException& e) {
-            pakCtrlImplObj__.HandShake(SERPKT_FINISHED);
-            throw;
+        if(!has_table_spec){
+            try {
+                checkLoggerTime();
+                bmp5ImplObj__.getDataDefinitions();
+            } 
+            catch (IOException& ioe) {
+                throw;
+            }
+            catch (AppException& e) {
+                pakCtrlImplObj__.HandShake(SERPKT_FINISHED);
+                throw;
+            }
+            has_table_spec=true;
         }
         pakCtrlImplObj__.HandShake(SERPKT_FINISHED);
 
@@ -276,71 +228,7 @@ void PB5CollectionProcess :: run() throw (exception)
 
 void PB5CollectionProcess :: collect() throw (AppException)
 {
-    bool recollect_tdf = false;
-    int numTables = appConfig__.getDataOutputConfig().Tables.size();
-
-    if (0 == numTables) {
-        Category::getInstance("Collect")
-                 .info("No tables listed for data collection.");
-        return;
-    }
-
-    const DataOutputConfig& dataOpt = appConfig__.getDataOutputConfig();
-
-    for (int count = 0; count < numTables; count++) {
-
-        cout << endl;
-        msgstrm << "Downloading data from " << dataOpt.Tables[count].TableName;
-        Category::getInstance("Collect")
-                 .notice(msgstrm.str());
-        msgstrm.str("");
-
-        try {
-            bmp5ImplObj__.CollectData(dataOpt.Tables[count]);
-        }
-        catch (invalid_argument& iae) {
-            msgstrm << "No data was downloaded for [" 
-                    << dataOpt.Tables[count].TableName;
-            Category::getInstance("Collect").error(msgstrm.str()); 
-            msgstrm.str("");
-        }
-        catch (StorageException& ioe) {
-            Category::getInstance("Collect")
-                     .error("Aborting data collection process.");
-            break;
-        }
-        catch (InvalidTDFException& ite) {
-
-            // The problem might be caused by a corrupt/modified
-            // table definition file. Therefore, recollect the file.
-
-            if (recollect_tdf == false) {
-                Category::getInstance("MAIN")
-                        .info("Retrying data collection by reloading TDF");
-                if (bmp5ImplObj__.ReloadTDF() == SUCCESS) {
-                        // Decrement the count to take another shot
-                        count--;
-                }
-                recollect_tdf = true;
-            }
-            else {
-                Category::getInstance("Collect")
-                         .error("Still receiving INVALID TDF error msg after reloading TDF");
-                break;
-            }
-        }
-        catch (AppException& e1) {
-
-            msgstrm << dataOpt.Tables[count].TableName << " --> " << e1.what();
-            Category::getInstance("Collect").error(msgstrm.str());
-            msgstrm.str("");
-
-            msgstrm << "Data collection failed for : ["
-                    << dataOpt.Tables[count].TableName << "]";
-            Category::getInstance("Collect").error(msgstrm.str()); 
-            msgstrm.str("");
-        }
-    }
+    bmp5ImplObj__.writeData();
 }
 
 void PB5CollectionProcess :: onExit() throw ()
@@ -351,32 +239,9 @@ void PB5CollectionProcess :: onExit() throw ()
     unlink (lockFilePath__.c_str());
 }
 
-void PB5CollectionProcess :: printHelp() throw ()
-{
-    cout << endl;
-    printVersion();
-    cout << "  Data Collection Software for PakBus Loggers                " << endl;
-    cout << "  Usage : " << PB5_APP_NAME;
-    cout << "  Options :                                                  " << endl;
-    cout << "     -c Complete path of the collection configuration file   " << endl;
-    cout << "     -d Turn on debugging to print packet level errors       " << endl;
-    // cout << "     -e Erase application cache                              " << endl;
-    cout << "     -w Override the working path mentioned in config file   " << endl;
-    cout << "     -r Redirect log msgs to a file instead of stdout. The   " << endl;
-    cout << "        logs will be stored in the <workingPath> directory   " << endl;
-    cout << "     -h Print this help message                              " << endl;
-    cout << "     -v Print version information                            " << endl;
-    cout << endl;
 
-    return;
 
-}
 
-void PB5CollectionProcess :: printVersion() throw ()
-{
-   cout << " " << PB5_APP_NAME << " Version : " << PB5_APP_VERS << endl;
-   return;
-}
 
 void PB5CollectionProcess :: checkLoggerTime() throw (AppException)
 {
