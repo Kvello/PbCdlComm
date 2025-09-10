@@ -171,7 +171,6 @@ int main (int argc, char *argv[])
 
     try {
         proc->init(argc,argv);
-        cout<<"init finished"<<endl;
         while (true){
             proc->run();
             int fastest_table_sec = proc->smallestTableInt();
