@@ -18,6 +18,7 @@
 
 #include <vector>
 #include <string>
+#include <map>
 #include <stdexcept>
 #include <memory>
 #include <libxml2/libxml/parser.h>
@@ -60,16 +61,6 @@ struct DLProgStats {
     uint2  ProgSig;
 };
 
-/**
- * Structure containing per table based output options for downloading and 
- * storing data. 
- */
-struct TableOpt {
-    TableOpt() : TableSpan(3600), SampleInt(0) {}
-    string TableName;
-    int    TableSpan;
-    int    SampleInt;
-} ;
 
 /**
  * A collection of all parameters that can be used to configure the data 
@@ -88,7 +79,8 @@ typedef struct {
  * data for multiple tables.
  */
 struct Table {
-    Table() : TblNum(0), TblSize((uint4)0), TblSignature((uint2)0), header_sent(false){}
+    Table() : TblNum(0), TblSize((uint4)0), TblSignature((uint2)0),
+    NextRecordNbr(-1){}
     /* 
      * The following parameters are read in from the Table Definitions file
      * stored on the logger.
@@ -101,8 +93,9 @@ struct Table {
     NSec   TblTimeInterval;
     vector<Field>  field_list;
     uint2  TblSignature;
-    bool header_sent;
     NSec LastRecordTime;
+    int  NextRecordNbr;
+    int SampleInt;
 };
 
 class TableDataWriter;
@@ -115,7 +108,7 @@ class TableDataWriter;
 class TableDataManager {
 
     public :
-        TableDataManager(string pipe_name, string separator);
+        TableDataManager(string separator);
         ~TableDataManager ();
 
         const DataOutputConfig& getDataOutputConfig() const;
@@ -125,7 +118,6 @@ class TableDataManager {
         void   setProgStats (DLProgStats& stats);
 
         TableDataWriter* getTableDataWriter();
-        void   setTableDataWriter(TableDataWriter* tblDataWriter);
 
         int BuildTDF(istream& table_structyre);
         int    xmlDumpTDF (char *filename);
@@ -136,6 +128,13 @@ class TableDataManager {
         int    getRecordSize (const Table& tbl);
         int    getMaxRecordSize();
 
+        int getNextRecordNumber(const Table& tbl);
+        void initWrite(string table_name);
+        void finishWrite(string table_name);
+
+        vector<Table>& getTables(){
+            return tableList__;
+        }
 
     protected : 
         int    readTableDefinition (int table_num, byte *ptr, byte *endptr);
@@ -156,7 +155,8 @@ class TableDataManager {
         vector<Table> tableList__;
         DataOutputConfig dataOutputConfig__;
         DLProgStats   dataLoggerProgStats__;
-        auto_ptr<TableDataWriter> tblDataWriter__;
+        map<string,auto_ptr<TableDataWriter>> tblDataWriters;
+        string separator;
 };
 
 /**
@@ -168,32 +168,18 @@ class TableDataManager {
  */
 class TableDataWriter {
 public: 
-    TableDataWriter() : tableDataMgr__(NULL) {}
+    TableDataWriter(){}
     virtual ~TableDataWriter() {}
 
-    /** Getter function for the pointer to current TableDataManager object */
-    const TableDataManager* getTableDataManager() const throw (runtime_error) 
-    {
-        if (NULL == tableDataMgr__) {
-            string errorMsg("Uninitialized tableDataMgr__ member in ");
-            errorMsg += typeid(*this).name();
-            throw runtime_error(errorMsg);
-        }
-        return tableDataMgr__;
-    }
-
-    /** Setter function for the pointer to a TableDataManager object */
-    void setTableDataManager(const TableDataManager* tblDataMgr) 
-    {
-        tableDataMgr__ = const_cast<TableDataManager*> (tblDataMgr);
-    }
     /** Function called while starting data collection for a specific table. */
-    virtual void initWrite(Table& tblRef) = 0;
+    virtual void initWrite(string additional_header)=0;
 
     /** Function called just before processing a binary data record */
-    virtual void processRecordBegin(Table& tblRef, int recordIdx, 
+    virtual void processRecordBegin(int recordIdx, 
                 NSec recordTime) = 0;
 
+    virtual void logUnimplementedDataError (const Field& var) = 0;
+    virtual void storeDataSample (const Field& var, byte **data)=0;
     /** Function called for storing a bool data sample */
     virtual void storeBool(const Field& var, bool flag) = 0;
 
@@ -216,20 +202,21 @@ public:
     virtual void processUnimplemented(const Field& var) = 0;
 
     /** Function called upon completion of parsing a binary data record */
-    virtual void processRecordEnd(Table& tblRef) = 0;
+    virtual void processRecordEnd() = 0;
 
     /** 
      * Function called to indicate the completion of data collection
      * for a specific table. 
      */
-    virtual void finishWrite(Table& tblRef) throw (StorageException) = 0; 
+    virtual void finishWrite() throw (StorageException) = 0; 
 
+protected:
+    Table table;
 private:
     /** 
      * A handle to the TableDataManager object which will invoke this 
      * writer.
      */ 
-    TableDataManager* tableDataMgr__;
 };
 
 
@@ -239,10 +226,10 @@ private:
 class CharacterOutputWriter : public TableDataWriter {
 public:
     CharacterOutputWriter(const string pipe_name, string separator);
-    virtual void initWrite(Table& tblRef);
-    virtual void processRecordBegin(Table& tblRef, int recordIdx, 
-                NSec recordTime);
-
+    virtual void initWrite(string additional_header);
+    virtual void processRecordBegin(int recordIdx,NSec recordTime);
+    virtual void storeDataSample (const Field& var, byte **data);
+    virtual void logUnimplementedDataError (const Field& var);
     virtual void storeBool(const Field& var, bool flag);
     virtual void storeInt(const Field& var, int num);
     virtual void storeFloat(const Field& var, float num);
@@ -251,14 +238,14 @@ public:
     virtual void storeUint4(const Field& var, uint4 num);
 
     virtual void processUnimplemented(const Field& var);
-    virtual void processRecordEnd(Table& tblRef);
-    virtual void finishWrite(Table& tblRef) throw (StorageException);
+    virtual void processRecordEnd();
+    virtual void finishWrite() throw (StorageException);
 
     static int   GetTimestamp(char *timestamp, const NSec& timeInfo);
 
 protected:
     ofstream dataFileStream__;
-    void   writeHeader(const Table& tbl_ref);
+    void   writeHeader(string additional_header);
     void   printHeaderLine(const char* prefix, const vector<Field>& fieldList, 
                int infoType);
     string getFileTimestamp(uint4 sample_time) throw (invalid_argument);

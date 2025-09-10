@@ -23,8 +23,12 @@ using namespace log4cpp;
  * @param filespan: Maximum timespan of a datfile. Defaults to 60 minutes.
  * @param sep: Seperator/delimiter character to use while writing data records.
  */
-CharacterOutputWriter :: CharacterOutputWriter(const string pipe_name, string sep) : 
-seperator__(sep), recordCount__(0)
+CharacterOutputWriter :: CharacterOutputWriter(
+    const string pipe_name, 
+    string separator
+) : seperator__(separator),
+    recordCount__(0),
+    header_sent(false)
 {
     dataFileStream__.exceptions(ofstream::badbit | ofstream::failbit); 
     dataFileStream__.open(pipe_name.c_str(),ios_base::app);
@@ -94,13 +98,13 @@ string CharacterOutputWriter :: getFileTimestamp (uint4 sample_time)
     return file_timestamp;
 }
 
-void CharacterOutputWriter :: initWrite(Table& tblRef)
+void CharacterOutputWriter :: initWrite(string additional_header)
 {
-    if(!tblRef.header_sent){
-        writeHeader(tblRef);
-        tblRef.header_sent = true;
+    if(header_sent){
+        writeHeader(additional_header);
+        header_sent = true;
     }
-    dataFileStream__<<"["<<tblRef.TblName<<"]"<<endl;
+    dataFileStream__<<"["<<table.TblName<<"]"<<endl;
 }
 
 void CharacterOutputWriter :: reportRecordCount()
@@ -114,8 +118,7 @@ void CharacterOutputWriter :: reportRecordCount()
     }
 }
 
-void CharacterOutputWriter :: processRecordBegin(Table& tbl_ref, int recordIdx, 
-        NSec recordTime) 
+void CharacterOutputWriter :: processRecordBegin(int recordIdx, NSec recordTime) 
 {
     char timestamp[32];
     // GetTimestamp(timestamp, tbl_ref.LastRecordTime); 
@@ -463,18 +466,10 @@ void CharacterOutputWriter :: printHeaderLine(const char* prefix,
    return;
 }
 
-void CharacterOutputWriter :: writeHeader(const Table& tbl_ref)
+void CharacterOutputWriter :: writeHeader(string additional_header)
 {
-    const vector<Field>& fieldList = tbl_ref.field_list;
+    const vector<Field>& fieldList = table.field_list;
 
-    const TableDataManager* tblDataMgr = this->getTableDataManager();
-
-    if (NULL == tblDataMgr) {
-        throw runtime_error("NULL TableDataManager member in CharacterOutputWriter!");
-    }
-
-    const DataOutputConfig& dataOutputConfig = tblDataMgr->getDataOutputConfig();
-    const DLProgStats& dlProgStats = tblDataMgr->getProgStats();
 
     //////////////////////////////////////////////////////
     // Print the file header : File format type, Station
@@ -483,16 +478,7 @@ void CharacterOutputWriter :: writeHeader(const Table& tbl_ref)
     // signature and the table name
     //////////////////////////////////////////////////////
 
-   dataFileStream__ << "\"TOA5\",\"" << dataOutputConfig.StationName << "\",\""
-                                     << dataOutputConfig.LoggerType << "\",\""
-                                     << dlProgStats.SerialNbr << "\",\"" 
-                                     << dlProgStats.OSVer << "\",\""
-                                     << dlProgStats.ProgName << "\",\"" 
-                                     << dlProgStats.ProgSig << "\",\"" 
-                                     << tbl_ref.TblName << "\",\"" 
-                                     << PB5_APP_NAME << "-" 
-                                     << PB5_APP_VERS << "\"" << endl;
-
+    dataFileStream__<<additional_header;
     // Print field names
     printHeaderLine("\"TIMESTAMP\",\"RECORD\",", fieldList, 1);
 

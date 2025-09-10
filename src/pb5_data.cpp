@@ -97,23 +97,12 @@ float intBitsToFloat (uint4 bits)
  * @param data_opt: Reference to the DataOutputConfig structure that contains
  *                  various information for generating file headers. 
  */
-TableDataManager :: TableDataManager (const string pipe_name, const string separator) : 
-tblDataWriter__(new CharacterOutputWriter(pipe_name,separator))
+TableDataManager :: TableDataManager (const string separator): separator(separator)
 { 
-    tblDataWriter__->setTableDataManager(this);
+
 }
 
-TableDataWriter* TableDataManager :: getTableDataWriter()
-{
-    return tblDataWriter__.get();
-}
 
-void TableDataManager :: setTableDataWriter(TableDataWriter* dataWriter)
-{
-    tblDataWriter__.reset(dataWriter);
-    tblDataWriter__->setTableDataManager(this);
-    return; 
-}
 
 const DLProgStats& TableDataManager :: getProgStats() const
 {
@@ -134,7 +123,7 @@ const DataOutputConfig& TableDataManager :: getDataOutputConfig() const
 void TableDataManager :: setDataOutputConfig(const DataOutputConfig& dataOpt)
 {
     dataOutputConfig__ = dataOpt;
-    tableList__.reserve(dataOpt.Tables.size()+2);
+
     return; 
 }
 
@@ -204,6 +193,16 @@ int TableDataManager :: BuildTDF(istream& table_structure)
         }
         ptr += nbytes;
         table_num++;
+    }    
+    for(Table tbl: tableList__){
+        string table_name = tbl.TblName;
+        string file_name = table_name+".raw";
+        tblDataWriters.insert(
+            std::pair<std::string, std::auto_ptr<TableDataWriter> >(
+                table_name,
+                std::auto_ptr<TableDataWriter>(new CharacterOutputWriter(file_name, separator))
+            )
+        );
     }
    
     return SUCCESS;
@@ -549,6 +548,29 @@ int TableDataManager :: getRecordSize (const Table& tbl)
     return RecSize;
 }
 
+void TableDataManager::initWrite(string table_name){
+
+    stringstream header;
+    header << "\"TOA5\",\"" << dataOutputConfig__.StationName << "\",\""
+                                     << dataOutputConfig__.LoggerType << "\",\""
+                                     << dataLoggerProgStats__.SerialNbr << "\",\"" 
+                                     << dataLoggerProgStats__.OSVer << "\",\""
+                                     << dataLoggerProgStats__.ProgName << "\",\"" 
+                                     << dataLoggerProgStats__.ProgSig << "\",\"" 
+                                     << table_name << "\",\"" 
+                                     << PB5_APP_NAME << "-" 
+                                     << PB5_APP_VERS << "\"" << endl;
+    tblDataWriters.at(table_name)->initWrite(header.str());
+    
+}
+void TableDataManager::finishWrite(string table_name){
+    tblDataWriters.at(table_name)->finishWrite();
+}
+
+int TableDataManager::getNextRecordNumber(const Table& tbl){
+    return tbl.NextRecordNbr;
+}
+
 /**
  * Function to determine the maximum record size.
  */
@@ -729,14 +751,14 @@ int TableDataManager :: storeRecord (Table& tbl_ref, byte **data, uint4 rec_num)
 
     start = field_list.begin();
     end   = field_list.end();
+    auto_ptr<TableDataWriter>& tblDataWriter = tblDataWriters.at(tbl_ref.TblName);
 
     try {
         // tbl_ref.LastRecordTime = parseRecordTime(*data);
         recordTime = parseRecordTime(*data);
         *data += 8;
     
-        tblDataWriter__->processRecordBegin(tbl_ref, rec_num, 
-                recordTime);
+        tblDataWriter->processRecordBegin(rec_num, recordTime);
         
         for (itr = start; itr < end; itr++) {
             if ((itr->FieldType == 11) || (itr->FieldType == 16)) {
@@ -749,7 +771,7 @@ int TableDataManager :: storeRecord (Table& tbl_ref, byte **data, uint4 rec_num)
             }
         }
 
-        tblDataWriter__->processRecordEnd(tbl_ref);
+        tblDataWriter->processRecordEnd();
                
         // Update state variables
         tbl_ref.LastRecordTime = recordTime;
