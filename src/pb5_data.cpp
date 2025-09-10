@@ -118,7 +118,14 @@ float intBitsToFloat (uint4 bits)
 TableDataManager :: TableDataManager (const string separator,const string working_path): 
 separator(separator), working_path__(working_path)
 { 
-
+    stringstream header;
+    header << "\"TOA5\",\"" << dataOutputConfig__.StationName << "\",\""
+                                     << dataOutputConfig__.LoggerType << "\",\""
+                                     << dataLoggerProgStats__.SerialNbr << "\",\"" 
+                                     << dataLoggerProgStats__.OSVer << "\",\""
+                                     << dataLoggerProgStats__.ProgName << "\",\"" 
+                                     << dataLoggerProgStats__.ProgSig << "\",\"" ;
+    additional_header__ = header.str();
 }
 
 
@@ -217,11 +224,11 @@ int TableDataManager :: BuildTDF(istream& table_structure)
         ptr += nbytes;
         table_num++;
     }    
-    for(vector<Table>::const_iterator tbl_it=tableList__.begin();tbl_it!=tableList__.end(); tbl_it++){
+    for(vector<Table>::iterator tbl_it=tableList__.begin();tbl_it!=tableList__.end(); tbl_it++){
         string table_name = tbl_it->TblName;
         string file_name = working_path__ +"/"+ table_name + ".raw";
-        TableDataWriter* writer(new CharacterOutputWriter(file_name, separator,*tbl_it));
-        tblDataWriters.insert(std::make_pair(table_name, writer));
+        TableDataWriter* writer(new CharacterOutputWriter(file_name, separator,*tbl_it,additional_header__));
+        tblDataWriters.insert(make_pair(table_name, writer));
     }
    
     return SUCCESS;
@@ -569,17 +576,8 @@ int TableDataManager :: getRecordSize (const Table& tbl)
 
 void TableDataManager::initWrite(string table_name){
 
-    stringstream header;
-    header << "\"TOA5\",\"" << dataOutputConfig__.StationName << "\",\""
-                                     << dataOutputConfig__.LoggerType << "\",\""
-                                     << dataLoggerProgStats__.SerialNbr << "\",\"" 
-                                     << dataLoggerProgStats__.OSVer << "\",\""
-                                     << dataLoggerProgStats__.ProgName << "\",\"" 
-                                     << dataLoggerProgStats__.ProgSig << "\",\"" 
-                                     << table_name << "\",\"" 
-                                     << PB5_APP_NAME << "-" 
-                                     << PB5_APP_VERS << "\"" << endl;
-    tblDataWriters.at(table_name)->initWrite(header.str());
+
+    tblDataWriters.at(table_name)->initWrite();
     
 }
 void TableDataManager::finishWrite(string table_name){
