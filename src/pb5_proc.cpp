@@ -14,7 +14,6 @@ using namespace log4cpp;
 // TODO - Set vtime through configuration file 
 // TODO - Persist connection settings 
 PB5CollectionProcess::PB5CollectionProcess(
-    string pipe_name, 
     string separator,
     bool& executionComplete,
     bool& optDebug,
@@ -25,7 +24,7 @@ PB5CollectionProcess::PB5CollectionProcess(
     appConfig__(appConfig),              // 2nd
     IObuf__(8192, 512),                  // 3rd
     pakCtrlImplObj__(),                  // 4th (default-initialized)
-    bmp5ImplObj__(pipe_name, separator), // 5th
+    bmp5ImplObj__(separator,appConfig.getDataOutputConfig().WorkingPath), // 5th
     lockFilePath__(),                    // 6th (default-initialized)
     optDebug__(optDebug),                // 7th
     optCleanAppCache__(false),           // 8th
@@ -60,16 +59,15 @@ void PB5CollectionProcess :: init(int argc, char* argv[])
 
 
 bool compareSampleInts(const Table& lhs, const Table& rhs){
-    return lhs.SampleInt<rhs.SampleInt;
+    return lhs.TblTimeInterval<rhs.TblTimeInterval;
 }
 /**
  * Gets the smallest sample interval of all the configured tables(seconds)
  */
 int PB5CollectionProcess :: smallestTableInt(){
-
-    vector<Table> tables = table
-    vector<Table>::iterator it = min_element(tables.begin(),tables.end(),compareSampleInts);
-    return it->SampleInt;
+    const vector<Table>& tables = bmp5ImplObj__.getTableDefinitions();
+    vector<Table>::const_iterator it = min_element(tables.begin(),tables.end(),compareSampleInts);
+    return static_cast<int>(it->TblTimeInterval.sec);
 }
 
 /**
@@ -230,7 +228,7 @@ void PB5CollectionProcess :: run() throw (exception)
 
 void PB5CollectionProcess :: collect() throw (AppException)
 {
-    bmp5ImplObj__.CollectData();
+    bmp5ImplObj__.writeData();
 }
 
 void PB5CollectionProcess :: onExit() throw ()
