@@ -46,7 +46,6 @@ public:
 class PB5CollectionProcess : public DataCollectionProcess {
 public:
     PB5CollectionProcess(
-        string pipe_name, 
         string separator,
         bool& executionComplete,
         bool& optDebug,
