@@ -319,57 +319,13 @@ void CommInpCfg :: loadSerialConfig (const xmlNodePtr node)
 void CommInpCfg :: loadDataOutputConfig (const xmlNodePtr node)
         throw (AppException)
 {
-    TableOpt   tbl_opt;
-    char      *properties, *dummy;
     xmlNodePtr cnode = node->children;
    
-    InputValidator validator;
-    validator.addRequiredInput("collect_table");
-    validator.addRequiredInput("table");
-
     while (cnode) {
         if ( ! xmlStrcasecmp ( cnode->name, (const xmlChar *)"working_path") ) {
             dataOpt__.WorkingPath = xmlNodeGetNormContent (cnode);
         }
-        else if ( !xmlStrcasecmp(cnode->name, 
-                    (const xmlChar *)"collect_table") ) {
-            validator.setInputStatusOk("collect_table");
-            xmlNodePtr tnode = cnode->children;
-            while (tnode) {
-                if (!xmlStrcasecmp(tnode->name, (const xmlChar *)"table")){
-                    tbl_opt.TableName = xmlNodeGetNormContent (tnode);
-                    validator.setInputStatusOk("table");
-                    properties = (char *)xmlGetProp (tnode, 
-                            (const xmlChar*)"sample_int_secs");
-                    if (properties == NULL) {
-                        tbl_opt.SampleInt = -1;
-                    }
-                    else {
-                        tbl_opt.SampleInt = strtol(properties, &dummy, 10);
-                    }
-
-                    properties = (char *)xmlGetProp (tnode, 
-                            (const xmlChar*)"file_span_secs");
-                    if (properties == NULL) {
-                        tbl_opt.TableSpan = 3600;
-                    }
-                    else {
-                        tbl_opt.TableSpan = strtol(properties, &dummy, 10);
-                        if (tbl_opt.TableSpan <= 0) {
-                            tbl_opt.TableSpan = 3600;
-                        }
-                    }
-                    dataOpt__.Tables.push_back (tbl_opt);
-                } 
-                tnode = tnode->next;
-            }
-        }
         cnode = cnode->next;
-    }
-
-    if (validator.validateInputs() == false) {
-        throw AppException(__FILE__, __LINE__, 
-                "Incomplete input for data table names");
     }
 }
 
@@ -549,13 +505,6 @@ void CommInpCfg :: dirSetup () throw (AppException)
       errMsg.append("Failed to setup").append(dir);
       throw AppException(__FILE__, __LINE__, errMsg.c_str());
   }
-
-  dir += "/.working";
-  if (setup_dir(dir)) {
-      errMsg.append("Failed to setup").append(dir);
-      throw AppException(__FILE__, __LINE__, errMsg.c_str());
-  }
-  return;
 }
 
 int CommInpCfg :: redirectLog ()
