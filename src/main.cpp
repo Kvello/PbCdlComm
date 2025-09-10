@@ -169,7 +169,8 @@ int main (int argc, char *argv[])
         executionComplete,
         optDebug,
         appConfig,
-        connectionString
+        connectionString,
+        -1 //-1 indicates to only use last record
      )
     );
 

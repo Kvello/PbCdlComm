@@ -51,7 +51,8 @@ public:
         bool& executionComplete,
         bool& optDebug,
         CommInpCfg& appConfig,
-        string connection_string
+        string connection_string,
+        const int next_record_number
     );
     ~PB5CollectionProcess() throw();
     virtual void init(int argc, char* argv[]) throw (exception);
@@ -82,12 +83,6 @@ private:
     bool             has_table_spec;
 };
 
-bool compareSampleInts(const TableOpt& lhs, const TableOpt& rhs);
-#define PB5_APP_NAME "PbCdlComm"
-// #define PB5_APP_VERS "1.3.5 (2008/07/28)"
-// #define PB5_APP_VERS "1.3.6 (2009/07/16)"
-// #define PB5_APP_VERS "1.3.8 (2010/05/12)" 
-// 1.3.8 Lock file creation will happen in /tmp instead of /var/tmp
+bool compareSampleInts(const Table& lhs, const Table& rhs);
 
-#define PB5_APP_VERS "1.3.9 (2010/08/31)" 
 #endif
