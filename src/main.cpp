@@ -62,15 +62,13 @@ void parseCommandLineArgs(
     bool& optDebug,
     CommInpCfg& appConfig,
     string& separator,
-    string& pipe_name,
     string& connectionString
 )
 {
-    char optstring[] = "c:p:w:o:s:drvh";
+    char optstring[] = "c:p:w:s:drvh";
     // --- defaults here ---
     std::string configFilePath   = "./config.xml";
-    std::string workingPath      = "./working";
-    pipe_name    = "/tmp/default_pipe";
+    std::string workingPath      = "";
     separator    = ", ";
     optDebug     = false;
     int         cmd_opt;
@@ -96,7 +94,6 @@ void parseCommandLineArgs(
             case 'w' : workingPath = optarg;     break;
             case 'h' : optDisplayHelp = true;  break;
             case 'v' : optDisplayVersion = true;  break;
-            case 'o' : pipe_name = optarg; break;
             case 's' : separator = optarg; break;
             case '?' : throw invalid_argument("Invalid argument provided for initialization");
         }
@@ -152,7 +149,6 @@ int main (int argc, char *argv[])
     bool optDebug = false;
     CommInpCfg appConfig;
     string sep="";
-    string pipe_name="";
     string connectionString="";
     parseCommandLineArgs(argc,
         argv,
@@ -160,11 +156,10 @@ int main (int argc, char *argv[])
         optDebug,
         appConfig,
         sep,
-        pipe_name,
         connectionString);
     cout<<"parseCommanLineArgs finished"<<endl;
     std::auto_ptr<PB5CollectionProcess> proc( 
-        new PB5CollectionProcess(pipe_name,
+        new PB5CollectionProcess(
         sep, 
         executionComplete,
         optDebug,
@@ -177,9 +172,10 @@ int main (int argc, char *argv[])
     try {
         proc->init(argc,argv);
         cout<<"init finished"<<endl;
-        int fastest_table_sec = proc->smallestTableInt();
         while (true){
             proc->run();
+            int fastest_table_sec = proc->smallestTableInt();
+            cout<<"Fastest table(sec)"<<fastest_table_sec<<endl;
             portable_sleep_s(fastest_table_sec);
         }
     } 
