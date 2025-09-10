@@ -407,3 +407,152 @@ void setSignalHandler(void (*exit_handler)(int signum))
     
     return;
 }
+
+
+/**
+ * Function to read in a variable length string from a bytestream.
+ * Returns a string from the location in a byte sequence as pointed
+ * by *str_ptr. 
+ *
+ * @param str_ptr: Pointer to the byte sequence.
+ * @return String extracted from str_ptr.
+ */
+string GetVarLenString(const byte *str_ptr)
+{
+    const char *beg = (const char *) str_ptr;
+    int count = 0;
+    byte *ptr = (byte *)str_ptr;
+
+    while (*ptr++ != 0x00) {
+        count++;
+    }
+    string str(beg, count);
+    return str;
+}
+
+/**
+ * Function to read in a fixed length string from a bytestream.
+ * Returns a string from the location in a byte sequence as pointed
+ * by *str_ptr. 
+ *
+ * @param str_ptr: Pointer to the byte sequence.
+ * @param var: Field for which the string is being extracted, dimension
+ *             information stored in the Field structure is used.
+ * @return String extracted from str_ptr.
+ */
+string GetFixedLenString (const byte *str_ptr, const Field& var)
+{
+    if (NULL == str_ptr) {
+        return "";
+    }
+
+    int   count = 0;
+    char *ptr = (char *)str_ptr;
+    char *buf = new char[var.Dimension+1];
+
+    while ( (count < (int)var.Dimension) && 
+           ((*ptr != 0x0d) && (*ptr != '\n') && (*ptr != '\0')) ) {
+        buf[count++] = *ptr++;
+    }
+    buf[count] = '\0';
+
+    string str(buf);
+    delete [] buf;
+    return str;
+}
+/**
+ * Function to extract floating point number from low resolution
+ * final storage format.
+ * This function doesn't inspect the input bit pattern to find out
+ * if the input bytes are part of a special number as a record ID,
+ * or if they are part of a 3/4 byte floating point number. If the
+ * absolute value of the number extracted is > 6999, -9999 is 
+ * returned.
+ *
+ * @param unum: Input bytes represented as unsigned short.
+ * @return Equivalent floating point number, -9999 on overflow.
+ */ 
+float GetFinalStorageFloat (uint2 unum)
+{
+    int   s = (unum >> 15) ? -1 : 1;
+    int   factor = (unum & 0x6000) >> 13;
+    float abs_val = pow (10.0, -1*factor) * (unum & 0x1fff);
+    
+    if (abs_val > 6999.0) {
+        return -9999;
+    }
+    else {
+        return (s*abs_val);
+    }
+}
+/**
+ * Function to obtain a description of the data type for a particular field.
+ *
+ * @param var: Reference to the Field structure being queried.
+ * @return Pointer to the character string containing the type description.
+ */
+const char* getDataType (const Field& var)
+{
+    int data_type = 0x000000ff & var.FieldType;
+    switch (data_type) 
+    {
+        case 1 : 
+            return "1-byte uint";
+        case 2 : 
+            return "2-byte unsigned integer (MSB first)";
+        case 3 : 
+            return "4-byte unsigned integer (MSB first)";
+        case 4 : 
+            return "1-byte signed integer";
+        case 5 : 
+            return "2-byte signed integer (MSB first)";
+        case 6 : 
+            return "4-byte signed integer (MSB first)";
+        case 7 : 
+            return "2-byte final storage floating point";
+        case 15 : 
+            return "3-byte final storage floating point - NOT IMPLEMENTED";
+        case 8 : 
+            return "4-byte final storage floating point (CSI format) - NOT IMPLEMENTED";
+        case 9 : 
+            return "4-byte floating point (IEEE standard, MSB first)";
+        case 18 : 
+            return "8-byte floating point (IEEE standard, MSB first) - NOT IMPLEMENTED";
+        case 17 : 
+            return "Byte of flags";
+        case 10 : 
+            return "Boolean value";
+        case 27 : 
+            return "Boolean value";
+        case 28 : 
+            return "Boolean value";
+        case 12 : 
+            return "4-byte integer used for 1-sec resolution time";
+        case 13 : 
+            return "6-byte unsigned integer, 10's of ms resolution - NOT IMPLEMENTED";
+        case 14 : 
+            return "2 4-byte integers, nanosecond time resolution (unused by CR23xx) - NOT IMPLEMENTED";
+        case 11 : 
+            return "fixed length string of lengh n, unused portion filled";
+        case 16 : 
+            return "variable length null-terminated string of length n+1";
+        case 19 : 
+            return "2-byte integer (LSB first) (unused by CR23xx) - NOT IMPLEMENTED";
+        case 20 : 
+            return "4-byte integer (LSB first) (unused by CR23xx) - NOT IMPLEMENTED";
+        case 21 : 
+            return "4-byte integer (LSB first) (unused by CR23xx) - NOT IMPLEMENTED";
+        case 22 : 
+            return "4-byte unsigned integer (LSB first) (unused by CR23xx) - NOT IMPLEMENTED";
+        case 23 : 
+            return "2 longs (LSB first), seconds then nanoseconds (unused by CR23xx) - NOT IMPLEMENTED";
+        case 24 : 
+            return "4-byte floating point (IEEE format, LSB first) (unused by CR23xx) - NOT IMPLEMENTED";
+        case 25 : 
+            return "8-byte floating point (IEEE format, LSB first) (unused by CR23xx) - NOT IMPLEMENTED";
+        case 26 : 
+            return "4-byte floating point value";
+        default : 
+            return "Unknown";
+    }
+}

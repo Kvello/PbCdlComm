@@ -26,10 +26,6 @@
 #include "utils.h"
 using namespace std;
 
-typedef unsigned short uint2;
-typedef unsigned int   uint4;
-typedef unsigned char  byte;
-
 /**
  * Structure containing second and nanosecond component of a time measurement.
  */
@@ -83,29 +79,7 @@ typedef struct {
     string WorkingPath;
     string StationName;
     string LoggerType;
-    vector<TableOpt> Tables;
 } DataOutputConfig;
-
-/**
- * Structure representing a data field or variable whose members mirror the
- * the storage format for storing the metadata for a field in datalogger memory.
- */
-struct Field {
-    Field() : FieldType(0), NullByte(0), BegIdx((uint4)0), 
-            Dimension((uint4)0), SubDimListTerm((uint4)0) {}
-    byte   FieldType;
-    string FieldName;
-    byte   NullByte;
-    string Processing;
-    string Unit;
-    string Description;
-    uint4  BegIdx;
-    uint4  Dimension;
-    vector<uint4>  SubDim;
-    uint4  SubDimListTerm;
-
-    string getProperty(int infoType, int dim) const;
-} ;
 
 /**
  * Data structure that mirrors the binary structure in which the metadata for
@@ -293,12 +267,14 @@ protected:
 private:
     string   dataDir__;
     string     seperator__;
-    int      recordCount__;
+    int      recordCount__;        
+    DataOutputConfig dataOutputConfig__;
+    DLProgStats   dlProgStats__;
+    bool header_sent;
 };
-string GetVarLenString (const byte *ptr);
-string GetFixedLenString (const byte *str_ptr, Field& var);
 NSec   parseRecordTime(const byte* data);
 
+float GetFinalStorageFloat (uint2 unum);
 //! Function to convert a bit pattern to the equivalent floating
 //! point number following specifications of IEEE-754 standard.
 float  intBitsToFloat (uint4 bits);

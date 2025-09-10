@@ -9,14 +9,13 @@
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <unistd.h>
+#include <cmath>
 #include <log4cpp/Category.hh>
 #include "pb5.h"
 #include "utils.h"
 #include "collection_process.h"
 using namespace std;
 using namespace log4cpp;
-
-
 /**
  * Constructor for an CharacterOutputWriter object.
  * 
@@ -127,16 +126,253 @@ void CharacterOutputWriter :: processRecordBegin(Table& tbl_ref, int recordIdx,
     dataFileStream__ << timestamp << this->seperator__ << recordIdx;
 }
 
-void CharacterOutputWriter :: processRecordEnd(Table& tbl_ref) 
+void CharacterOutputWriter :: processRecordEnd() 
 {
     dataFileStream__ << endl;
     recordCount__ += 1;
 }
 
-void CharacterOutputWriter :: finishWrite(Table& tblRef) throw (StorageException)
+void CharacterOutputWriter :: finishWrite() throw (StorageException)
 {
     dataFileStream__<<"\n";
     dataFileStream__.flush();
+}
+
+/**
+ * Function to extract a sample for a particular field from a data record
+ * and write it to an output file stream.
+ *
+ * @param fs:   Reference to the output file stream.
+ * @param var:  Reference to the Field structure being extracted from data.
+ * @param data: Address of the pointer to the memory where the data sample
+ *              is stored.
+ */
+void CharacterOutputWriter :: storeDataSample (const Field& var, byte **data)
+{
+     uint4   unum = 0;
+     uint2   unum2 = 0;
+     int     num  = 0;
+     string  str;
+    
+     switch (var.FieldType) 
+     {
+         case 7 : 
+             // 2-byte final storage floating point - Tested with CR1000 data
+             unum2 = (uint2) PBDeserialize (*data, 2);
+             storeFloat(var, GetFinalStorageFloat(unum2));
+             *data += 2;
+             break;
+
+         case 6 : 
+             // 4-byte signed integer (MSB first) - Tested with CR1000 data
+             num   = (int)PBDeserialize (*data, 4);
+             storeInt(var, num);
+             *data += 4;
+             break;
+
+         case 9 : 
+             // 4-byte floating point (IEEE standard, MSB first) - Tested with 
+             // CR1000 data
+             num = PBDeserialize (*data, 4);
+             storeFloat(var, intBitsToFloat(num));
+             *data += 4;
+             break;
+
+         case 10 : 
+             // Boolean value - Tested with CR1000 data
+             unum = PBDeserialize (*data, 1);
+             storeBool(var, unum & 0x80);
+             *data += 1;
+             break;
+
+         case 16 : 
+             // variable length null-terminated string of length n+1 - Tested 
+             // with CR1000 data
+             str = GetVarLenString (*data);
+             storeString(var, str);
+             *data += str.size() + 1;
+             break;
+
+         case 11 : 
+             // fixed length string of lengh n, unused portion filled 
+             // with spaces/null - Tested with CR1000 data
+             str = GetFixedLenString (*data, var);
+             storeString(var, str);
+             *data += var.Dimension;
+             break;
+
+         case 1 : 
+             // 1-byte uint
+             unum = PBDeserialize (*data, 1);
+             storeUint4(var, unum);
+             *data += 1;
+             break;
+         case 2 : 
+             // 2-byte unsigned integer (MSB first)
+             unum = PBDeserialize (*data, 2);
+             storeUint4(var, unum);
+             *data += 2;
+             break;
+         case 3 : 
+             // 4-byte unsigned integer (MSB first)
+             unum = PBDeserialize (*data, 4);
+             storeUint4(var, unum);
+             *data += 4;
+             break;
+         case 4 : 
+             // 1-byte signed integer
+             num  = (int)PBDeserialize (*data, 1);
+             storeInt(var, num);
+             *data += 1;
+             break;
+         case 5 : 
+             // 2-byte signed integer (MSB first)
+             num = (int)PBDeserialize (*data, 2);
+             storeInt(var, num);
+             *data += 2;
+             break;
+         case 18 : 
+             // 8-byte floating point (IEEE standard, MSB first)
+             processUnimplemented(var);
+             logUnimplementedDataError(var);
+             *data += 8;
+             break;
+         case 15 : 
+             // 3-byte final storage floating point
+             processUnimplemented(var);
+             logUnimplementedDataError(var);
+             *data += 3;
+             break;
+         case 8 : 
+             // 4-byte final storage floating point (CSI format)
+             processUnimplemented(var);
+             logUnimplementedDataError(var);
+             *data += 4;
+             break;
+         case 17 : 
+             // Byte of flags
+             unum = PBDeserialize (*data, 1);
+             storeUint4(var, unum);
+             *data += 1;
+             break;
+         case 27 : 
+             // Boolean value
+             unum = PBDeserialize (*data, 1);
+             storeBool(var, unum & 0x80);
+             *data += 1;
+             break;
+         case 28 : 
+             // Boolean value
+             unum = PBDeserialize (*data, 1);
+             storeBool(var, unum & 0x80);
+             *data += 1;
+             break;
+         case 12 : 
+             // 4-byte integer used for 1-sec resolution time
+             unum = PBDeserialize (*data, 4);
+             storeUint4(var, unum);
+             *data += 4;
+             break;
+         case 13 : 
+             // 6-byte unsigned integer, 10's of ms resolution
+             // Read a ulong, then mask out last 2 bytes
+             unum = PBDeserialize (*data, 4);
+             storeUint4(var, unum);
+             *data += 6;
+             break;
+         case 14 : 
+             // 2 4-byte integers, nanosecond time resolution
+             processUnimplemented(var);
+             logUnimplementedDataError(var);
+             *data += 8;
+             break;
+         case 19 : 
+             // 2-byte integer (LSB first)
+             processUnimplemented(var);
+             logUnimplementedDataError(var);
+             *data += 2;
+             break;
+         case 20 : 
+             // 4-byte integer (LSB first)
+             processUnimplemented(var);
+             logUnimplementedDataError(var);
+             *data += 4;
+             break;
+         case 21 : 
+             // 2-byte unsigned integer (LSB first)
+             processUnimplemented(var);
+             logUnimplementedDataError(var);
+             *data += 2;
+             break;
+         case 22 : 
+             // 4-byte unsigned integer (LSB first)
+             processUnimplemented(var);
+             logUnimplementedDataError(var);
+             *data += 4;
+             break;
+         case 24 : 
+             // 4-byte floating point (IEEE format, LSB first)
+             processUnimplemented(var);
+             logUnimplementedDataError(var);
+             *data += 4;
+             break;
+         case 25 : 
+             // 8-byte floating point (IEEE format, LSB first)
+             processUnimplemented(var);
+             logUnimplementedDataError(var);
+             *data += 8;
+             break;
+         case 23 : 
+             // 2 longs (LSB first), seconds then nanoseconds
+             processUnimplemented(var);
+             logUnimplementedDataError(var);
+             *data += 8;
+             break;
+         case 26 : 
+             // 4-byte floating point value
+             processUnimplemented(var);
+             logUnimplementedDataError(var);
+             *data += 4;
+             break;
+         default : 
+             processUnimplemented(var);
+             logUnimplementedDataError(var);
+    }
+    return;
+}
+/**
+ * Function to print out an error message in the log file if an unsupported
+ * data type was found while collecting data for a table.
+ * 
+ * @param var: Reference to the Field structure with the unimplemented data
+ *             type.
+ */
+void CharacterOutputWriter :: logUnimplementedDataError (const Field& var)
+{
+    static vector<string> err_field_list(100);
+    static string last_err_field_name;
+
+    if (last_err_field_name == var.FieldName) {
+        return;
+    }
+
+    if (!err_field_list.empty()) {
+        vector<string>::iterator result = find (err_field_list.begin(), 
+                err_field_list.end(), var.FieldName); 
+        if ( (result != err_field_list.end()) || 
+                !(var.FieldName.compare(err_field_list.back())) ) {
+            return;
+        }
+    }
+
+    stringstream msgstrm;
+    msgstrm << "ERROR in decoding data values for Field \"" << var.FieldName 
+            << "\" [" << getDataType (var) << "]" << endl;
+    Category::getInstance("TableDataManager")
+            .info(msgstrm.str());
+    err_field_list.push_back(var.FieldName);
+    last_err_field_name = var.FieldName;
+    return;
 }
 
 void CharacterOutputWriter :: storeBool(const Field& var, bool flag)
