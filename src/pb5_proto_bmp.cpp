@@ -36,10 +36,8 @@ using namespace log4cpp;
  * @param: Structure containing information about data directory, logger name,
  *         name of tables to collect and the station name.
  */
-BMP5Obj :: BMP5Obj (
-    const string pipe_name, 
-    const string separator) : 
-PakBusMsg(), dataBufSize__(BMP5_BUFLEN), tblDataMgr__(separator)
+BMP5Obj :: BMP5Obj (const string separator,const string working_path) : 
+PakBusMsg(), dataBufSize__(BMP5_BUFLEN), tblDataMgr__(separator,working_path)
 {
     HiProtoCode__ = 0x01;
     dataBuf__ = new byte[dataBufSize__];
@@ -558,7 +556,10 @@ BMP5Obj :: store_data (byte* buf, Table& tbl, int beg, int nrecs) throw (Storage
     return stat;
 }
 
-int BMP5Obj::writeData(){
+const vector<Table>& BMP5Obj::getTableDefinitions(){
+    return tblDataMgr__.getTables();
+}
+void BMP5Obj::writeData(){
     vector<Table>& tables_ref = tblDataMgr__.getTables();
     int numTables = tables_ref.size();
 
@@ -725,7 +726,7 @@ int BMP5Obj :: CollectData (Table& tbl_ref) throw (AppException, invalid_argumen
             time_t t_c = (time_t)recordStat.recordTime.sec + SECS_BEFORE_1990;
 
             if (records_pending == -1) {
-                if (0 == nseccmp(tbl_ref.LastRecordTime, recordStat.recordTime)) {
+                if (tbl_ref.LastRecordTime == recordStat.recordTime) {
                     Category::getInstance("BMP5")
                          .info("No new data is available yet for : " 
                                 + tbl_ref.TblName);
@@ -742,7 +743,7 @@ int BMP5Obj :: CollectData (Table& tbl_ref) throw (AppException, invalid_argumen
                     msgstrm.str("");
                 }
             }
-            else if (nseccmp(tbl_ref.LastRecordTime, recordStat.recordTime) > 1) {
+            else if (tbl_ref.LastRecordTime>recordStat.recordTime) {
                 msgstrm << "Backward shift observed in datalogger clock." << endl
                         << "\tCheck data from table => " << tbl_ref.TblName << endl
                         << "\tTimestamp of last available data record in datalogger memory"

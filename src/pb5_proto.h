@@ -186,7 +186,7 @@ struct RecordStat {
 class BMP5Obj : public PakBusMsg {
 
     public :
-        BMP5Obj (const string pipe_name, const string separator);
+        BMP5Obj ( const string separator, const string working_path);
         // BMP5Obj (PBAddr* pb_addr, pakbuf* IOBuf, string appl_dir);
         ~BMP5Obj ();
         void  setTableDataManager(TableDataManager& tblDataMgr);
@@ -201,8 +201,8 @@ class BMP5Obj : public PakBusMsg {
         void setDataOutputConfig(const DataOutputConfig& data_opt){
             tblDataMgr__.setDataOutputConfig(data_opt);
         }
-        int init_write(string table_name);
-        int writeData();
+        void writeData();
+        const vector<Table>& getTableDefinitions();
  
     protected :
         void  GetProgStats (uint2 security_code) throw (ParseException);
@@ -217,9 +217,9 @@ class BMP5Obj : public PakBusMsg {
                 throw (IOException);
     
     private :
+        TableDataManager tblDataMgr__;
         byte*     dataBuf__;
         int       dataBufSize__;
-        TableDataManager tblDataMgr__;
 };
 
 #define SUCCESS             0

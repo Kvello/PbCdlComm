@@ -35,6 +35,9 @@ struct NSec {
     void operator+=(NSec& timeVal);
     uint4 sec;
     uint4 nsec;
+    bool operator<(const NSec& other) const;
+    bool operator>(const NSec& other) const;
+    bool operator==(const NSec& other) const;
 };
 
 /**
@@ -95,7 +98,6 @@ struct Table {
     uint2  TblSignature;
     NSec LastRecordTime;
     int  NextRecordNbr;
-    int SampleInt;
 };
 
 class TableDataWriter;
@@ -108,7 +110,7 @@ class TableDataWriter;
 class TableDataManager {
 
     public :
-        TableDataManager(string separator);
+        TableDataManager(const string separator,const string working_path);
         ~TableDataManager ();
 
         const DataOutputConfig& getDataOutputConfig() const;
@@ -143,7 +145,6 @@ class TableDataManager {
         void   writeTableToXml (xmlNodePtr doc_root, Table& tbl);
         void   writeFieldToXml (xmlNodePtr table_node, Field& var);
 
-        const char* getDataType (const Field& var);
         void   logUnimplementedDataError(const Field& var);
 
         void   storeDataSample(const Field& var, byte **data);
@@ -155,8 +156,9 @@ class TableDataManager {
         vector<Table> tableList__;
         DataOutputConfig dataOutputConfig__;
         DLProgStats   dataLoggerProgStats__;
-        map<string,auto_ptr<TableDataWriter>> tblDataWriters;
+        map<string,TableDataWriter*> tblDataWriters;
         string separator;
+        string working_path__;
 };
 
 /**
@@ -211,7 +213,7 @@ public:
     virtual void finishWrite() throw (StorageException) = 0; 
 
 protected:
-    Table table;
+    Table table__;
 private:
     /** 
      * A handle to the TableDataManager object which will invoke this 
@@ -225,7 +227,7 @@ private:
  */
 class CharacterOutputWriter : public TableDataWriter {
 public:
-    CharacterOutputWriter(const string pipe_name, string separator);
+    CharacterOutputWriter(const string pipe_name, string separator, Table table);
     virtual void initWrite(string additional_header);
     virtual void processRecordBegin(int recordIdx,NSec recordTime);
     virtual void storeDataSample (const Field& var, byte **data);

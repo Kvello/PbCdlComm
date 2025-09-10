@@ -30,6 +30,24 @@
 using namespace std;
 using namespace log4cpp;
 
+bool NSec::operator<(const NSec& other) const{
+    if(this->sec < other.sec){
+        return true;
+    }
+    if(this->sec > other.sec){
+        return false;
+    }
+    if(this->nsec < other.nsec){
+        return true;
+    }
+    else return false;
+}
+bool NSec::operator>(const NSec& other) const{
+    return other < *this;
+}
+bool NSec::operator==(const NSec& other) const{
+    return (this->sec==other.sec)&&(this->nsec==other.nsec);
+}
 /**
  * Operator += for NSec structure
  * 
@@ -97,7 +115,8 @@ float intBitsToFloat (uint4 bits)
  * @param data_opt: Reference to the DataOutputConfig structure that contains
  *                  various information for generating file headers. 
  */
-TableDataManager :: TableDataManager (const string separator): separator(separator)
+TableDataManager :: TableDataManager (const string separator,const string working_path): 
+separator(separator), working_path__(working_path)
 { 
 
 }
@@ -137,6 +156,10 @@ TableDataManager :: ~TableDataManager ()
 { 
     Category::getInstance("TableDataManager")
              .debug("Saving history for all collected tables.");
+    for(map<string,TableDataWriter*>::iterator it = tblDataWriters.begin();
+     it!=tblDataWriters.end();it++){
+        delete it->second;
+     }
 }
 
 /**
@@ -194,15 +217,11 @@ int TableDataManager :: BuildTDF(istream& table_structure)
         ptr += nbytes;
         table_num++;
     }    
-    for(Table tbl: tableList__){
-        string table_name = tbl.TblName;
-        string file_name = table_name+".raw";
-        tblDataWriters.insert(
-            std::pair<std::string, std::auto_ptr<TableDataWriter> >(
-                table_name,
-                std::auto_ptr<TableDataWriter>(new CharacterOutputWriter(file_name, separator))
-            )
-        );
+    for(vector<Table>::const_iterator tbl_it=tableList__.begin();tbl_it!=tableList__.end(); tbl_it++){
+        string table_name = tbl_it->TblName;
+        string file_name = working_path__ +"/"+ table_name + ".raw";
+        TableDataWriter* writer(new CharacterOutputWriter(file_name, separator,*tbl_it));
+        tblDataWriters.insert(std::make_pair(table_name, writer));
     }
    
     return SUCCESS;
@@ -751,7 +770,7 @@ int TableDataManager :: storeRecord (Table& tbl_ref, byte **data, uint4 rec_num)
 
     start = field_list.begin();
     end   = field_list.end();
-    auto_ptr<TableDataWriter>& tblDataWriter = tblDataWriters.at(tbl_ref.TblName);
+    TableDataWriter* tblDataWriter = tblDataWriters.at(tbl_ref.TblName);
 
     try {
         // tbl_ref.LastRecordTime = parseRecordTime(*data);
@@ -762,11 +781,11 @@ int TableDataManager :: storeRecord (Table& tbl_ref, byte **data, uint4 rec_num)
         
         for (itr = start; itr < end; itr++) {
             if ((itr->FieldType == 11) || (itr->FieldType == 16)) {
-                storeDataSample(*itr, data);
+                tblDataWriter->storeDataSample(*itr, data);
             }
             else {
                 for (int dim = 0; dim < (int)itr->Dimension; dim++) {
-                    storeDataSample(*itr, data);
+                    tblDataWriter->storeDataSample(*itr, data);
                 } 
             }
         }
