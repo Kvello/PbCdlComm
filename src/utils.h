@@ -21,6 +21,7 @@
 #include <cmath>
 #include <exception>
 #include <stdlib.h>
+#include <vector>
 #include <libxml2/libxml/tree.h>
 using namespace std;
 
