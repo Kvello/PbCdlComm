@@ -25,11 +25,13 @@ using namespace log4cpp;
  */
 CharacterOutputWriter :: CharacterOutputWriter(
     const string pipe_name, 
-    string separator
+    string separator,
+    Table table
 ) : seperator__(separator),
     recordCount__(0),
     header_sent(false)
 {
+    table__ = table;
     dataFileStream__.exceptions(ofstream::badbit | ofstream::failbit); 
     dataFileStream__.open(pipe_name.c_str(),ios_base::app);
 }
@@ -100,11 +102,10 @@ string CharacterOutputWriter :: getFileTimestamp (uint4 sample_time)
 
 void CharacterOutputWriter :: initWrite(string additional_header)
 {
-    if(header_sent){
+    if(!header_sent){
         writeHeader(additional_header);
         header_sent = true;
     }
-    dataFileStream__<<"["<<table.TblName<<"]"<<endl;
 }
 
 void CharacterOutputWriter :: reportRecordCount()
@@ -137,7 +138,6 @@ void CharacterOutputWriter :: processRecordEnd()
 
 void CharacterOutputWriter :: finishWrite() throw (StorageException)
 {
-    dataFileStream__<<"\n";
     dataFileStream__.flush();
 }
 
@@ -468,7 +468,7 @@ void CharacterOutputWriter :: printHeaderLine(const char* prefix,
 
 void CharacterOutputWriter :: writeHeader(string additional_header)
 {
-    const vector<Field>& fieldList = table.field_list;
+    const vector<Field>& fieldList = table__.field_list;
 
 
     //////////////////////////////////////////////////////
