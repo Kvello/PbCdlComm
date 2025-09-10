@@ -36,12 +36,13 @@ using namespace log4cpp;
  * @param: Structure containing information about data directory, logger name,
  *         name of tables to collect and the station name.
  */
-BMP5Obj :: BMP5Obj (const string pipe_name, const string separator) : 
-PakBusMsg(), dataBufSize__(BMP5_BUFLEN), tblDataMgr__(pipe_name,separator)
+BMP5Obj :: BMP5Obj (
+    const string pipe_name, 
+    const string separator) : 
+PakBusMsg(), dataBufSize__(BMP5_BUFLEN), tblDataMgr__(separator)
 {
     HiProtoCode__ = 0x01;
     dataBuf__ = new byte[dataBufSize__];
-    next_rec_nbr = -1; //Not initialized. Catch when used first
 }
 
 BMP5Obj :: ~BMP5Obj() 
@@ -462,7 +463,7 @@ BMP5Obj :: process_upload_file (Packet& pack, ostream& out_data) throw (IOExcept
  * @return Returns -1 if an invalud collection mode is specified.
  */
 int 
-BMP5Obj :: sendCollectionCmd (byte message_type, Table& tbl, uint4 P1, uint4 P2)
+BMP5Obj :: sendCollectionCmd (byte message_type, const Table& tbl, uint4 P1, uint4 P2)
 {
     Priority__ = 0x02;
     MsgType__  = 0x09;
@@ -557,6 +558,72 @@ BMP5Obj :: store_data (byte* buf, Table& tbl, int beg, int nrecs) throw (Storage
     return stat;
 }
 
+int BMP5Obj::writeData(){
+    vector<Table>& tables_ref = tblDataMgr__.getTables();
+    int numTables = tables_ref.size();
+
+    bool recollect_tdf = false;
+    if (0 == numTables) {
+        Category::getInstance("Collect")
+                 .info("No tables listed for data collection.");
+        return;
+    }
+    stringstream msgstrm;
+    for (int count = 0; count < numTables; count++) {
+
+        cout << endl;
+        msgstrm << "Downloading data from " <<tables_ref[count].TblName;
+        Category::getInstance("Collect")
+                 .notice(msgstrm.str());
+        msgstrm.str("");
+
+        try {
+            CollectData(tables_ref[count]);
+        }
+        catch (invalid_argument& iae) {
+            msgstrm << "No data was downloaded for [" 
+                    << tables_ref[count].TblName;
+            Category::getInstance("Collect").error(msgstrm.str()); 
+            msgstrm.str("");
+        }
+        catch (StorageException& ioe) {
+            Category::getInstance("Collect")
+                     .error("Aborting data collection process.");
+            break;
+        }
+        catch (InvalidTDFException& ite) {
+
+            // The problem might be caused by a corrupt/modified
+            // table definition file. Therefore, recollect the file.
+
+            if (recollect_tdf == false) {
+                Category::getInstance("MAIN")
+                        .info("Retrying data collection by reloading TDF");
+                if (ReloadTDF() == SUCCESS) {
+                        // Decrement the count to take another shot
+                        count--;
+                }
+                recollect_tdf = true;
+            }
+            else {
+                Category::getInstance("Collect")
+                         .error("Still receiving INVALID TDF error msg after reloading TDF");
+                break;
+            }
+        }
+        catch (AppException& e1) {
+
+            msgstrm << tables_ref[count].TblName << " --> " << e1.what();
+            Category::getInstance("Collect").error(msgstrm.str());
+            msgstrm.str("");
+
+            msgstrm << "Data collection failed for : ["
+                    << tables_ref[count].TblName << "]";
+            Category::getInstance("Collect").error(msgstrm.str()); 
+            msgstrm.str("");
+        }
+    }
+}
 /**
  * Function to collect data from a specified table. 
  * First a message is sent to the data logger to query about the last stored
@@ -573,8 +640,9 @@ BMP5Obj :: store_data (byte* buf, Table& tbl, int beg, int nrecs) throw (Storage
  * @param span: Span of datafile in seconds
  * @return SUCCESS | FAILURE
  */
-int BMP5Obj :: CollectData (const TableOpt& table_opt) throw (AppException, invalid_argument)
+int BMP5Obj :: CollectData (Table& tbl_ref) throw (AppException, invalid_argument)
 {
+
     // bool     alloc_buffer = true;
     int      record_size;
     int      last_rec_nbr;
@@ -585,9 +653,7 @@ int BMP5Obj :: CollectData (const TableOpt& table_opt) throw (AppException, inva
     stringstream msgstrm;
     RecordStat recordStat;
 
-    Table& tbl_ref = tblDataMgr__.getTableRef (table_opt.TableName);
-    
-    record_size = tblDataMgr__.getRecordSize (tbl_ref);
+    record_size = tblDataMgr__.getRecordSize(tbl_ref);
 
     // If there is a possibility of the data record be fragmented into multiple
     // packets, then allocate buffer memory to accumulate the data stored in 
@@ -647,6 +713,7 @@ int BMP5Obj :: CollectData (const TableOpt& table_opt) throw (AppException, inva
          
         //If we have not yet collected any records, and next_rec_nbr=-1, we assume there is exactly
         // 1 new record. Note that this implies no fault tolerance if the system/program crashes (we can't know where we left off)
+        int next_rec_nbr = tblDataMgr__.getNextRecordNumber(tbl_ref);
         if(next_rec_nbr==-1){
             next_rec_nbr = last_rec_nbr;
         }
@@ -661,7 +728,7 @@ int BMP5Obj :: CollectData (const TableOpt& table_opt) throw (AppException, inva
                 if (0 == nseccmp(tbl_ref.LastRecordTime, recordStat.recordTime)) {
                     Category::getInstance("BMP5")
                          .info("No new data is available yet for : " 
-                                + table_opt.TableName);
+                                + tbl_ref.TblName);
                     return SUCCESS;
                 }
                 else {
@@ -725,7 +792,7 @@ int BMP5Obj :: CollectData (const TableOpt& table_opt) throw (AppException, inva
         // append to it. Else, a new file will be created.
     
         //TODO set the fileSpan/reportSpan here and remove from the get_records call
-        tblDataMgr__.getTableDataWriter()->initWrite(tbl_ref);
+        tblDataMgr__.initWrite(tbl_ref.TblName);
 
        /*
         * Main collection loop
@@ -777,20 +844,20 @@ int BMP5Obj :: CollectData (const TableOpt& table_opt) throw (AppException, inva
             }
         }
        
-        tblDataMgr__.getTableDataWriter()->finishWrite(tbl_ref);
+        tblDataMgr__.finishWrite(tbl_ref.TblName);
     }
     else {
         //
         // For the case where TblSize (number of records in a table)
         // is not known
         //
-        tblDataMgr__.getTableDataWriter()->initWrite(tbl_ref);
+        tblDataMgr__.initWrite(tbl_ref.TblName);
 
         recordStat = get_records (tbl_ref, GET_LAST_REC | STORE_DATA,
                 record_size, 1, 0);
         num_collected_recs = recordStat.count;
        
-        tblDataMgr__.getTableDataWriter()->finishWrite(tbl_ref);
+        tblDataMgr__.finishWrite(tbl_ref.TblName);
     }
 
     if (get_debug()) {
@@ -1223,7 +1290,7 @@ BMP5Obj :: get_records (Table& tbl_ref, byte start_mode, int record_size,
  * @return SUCCESS | FAILURE
  */
 int 
-BMP5Obj :: test_data_packet (Table& tbl_ref, Packet& pack) throw (AppException)
+BMP5Obj :: test_data_packet (const Table& tbl_ref, Packet& pack) throw (AppException)
 {
     byte* ptr = (byte *)(pack.begPacket + 11);
 

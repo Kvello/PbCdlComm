@@ -19,7 +19,9 @@ PB5CollectionProcess::PB5CollectionProcess(
     bool& executionComplete,
     bool& optDebug,
     CommInpCfg& appConfig,
-    string connection_string) :
+    string connection_string,
+    const int next_record_number
+) :
     appConfig__(appConfig),              // 2nd
     IObuf__(8192, 512),                  // 3rd
     pakCtrlImplObj__(),                  // 4th (default-initialized)
@@ -57,7 +59,7 @@ void PB5CollectionProcess :: init(int argc, char* argv[])
 }
 
 
-bool compareSampleInts(const TableOpt& lhs, const TableOpt& rhs){
+bool compareSampleInts(const Table& lhs, const Table& rhs){
     return lhs.SampleInt<rhs.SampleInt;
 }
 /**
@@ -65,8 +67,8 @@ bool compareSampleInts(const TableOpt& lhs, const TableOpt& rhs){
  */
 int PB5CollectionProcess :: smallestTableInt(){
 
-    vector<TableOpt> tables = appConfig__.getDataOutputConfig().Tables;
-    vector<TableOpt>::iterator it = min_element(tables.begin(),tables.end(),compareSampleInts);
+    vector<Table> tables = table
+    vector<Table>::iterator it = min_element(tables.begin(),tables.end(),compareSampleInts);
     return it->SampleInt;
 }
 
@@ -228,71 +230,7 @@ void PB5CollectionProcess :: run() throw (exception)
 
 void PB5CollectionProcess :: collect() throw (AppException)
 {
-    bool recollect_tdf = false;
-    int numTables = appConfig__.getDataOutputConfig().Tables.size();
-
-    if (0 == numTables) {
-        Category::getInstance("Collect")
-                 .info("No tables listed for data collection.");
-        return;
-    }
-
-    const DataOutputConfig& dataOpt = appConfig__.getDataOutputConfig();
-
-    for (int count = 0; count < numTables; count++) {
-
-        cout << endl;
-        msgstrm << "Downloading data from " << dataOpt.Tables[count].TableName;
-        Category::getInstance("Collect")
-                 .notice(msgstrm.str());
-        msgstrm.str("");
-
-        try {
-            bmp5ImplObj__.CollectData(dataOpt.Tables[count]);
-        }
-        catch (invalid_argument& iae) {
-            msgstrm << "No data was downloaded for [" 
-                    << dataOpt.Tables[count].TableName;
-            Category::getInstance("Collect").error(msgstrm.str()); 
-            msgstrm.str("");
-        }
-        catch (StorageException& ioe) {
-            Category::getInstance("Collect")
-                     .error("Aborting data collection process.");
-            break;
-        }
-        catch (InvalidTDFException& ite) {
-
-            // The problem might be caused by a corrupt/modified
-            // table definition file. Therefore, recollect the file.
-
-            if (recollect_tdf == false) {
-                Category::getInstance("MAIN")
-                        .info("Retrying data collection by reloading TDF");
-                if (bmp5ImplObj__.ReloadTDF() == SUCCESS) {
-                        // Decrement the count to take another shot
-                        count--;
-                }
-                recollect_tdf = true;
-            }
-            else {
-                Category::getInstance("Collect")
-                         .error("Still receiving INVALID TDF error msg after reloading TDF");
-                break;
-            }
-        }
-        catch (AppException& e1) {
-
-            msgstrm << dataOpt.Tables[count].TableName << " --> " << e1.what();
-            Category::getInstance("Collect").error(msgstrm.str());
-            msgstrm.str("");
-
-            msgstrm << "Data collection failed for : ["
-                    << dataOpt.Tables[count].TableName << "]";
-            Category::getInstance("Collect").error(msgstrm.str()); 
-            msgstrm.str("");
-        }
-    }
+    bmp5ImplObj__.CollectData();
 }
 
 void PB5CollectionProcess :: onExit() throw ()
