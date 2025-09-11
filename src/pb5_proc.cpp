@@ -18,8 +18,7 @@ PB5CollectionProcess::PB5CollectionProcess(
     bool& executionComplete,
     bool& optDebug,
     CommInpCfg& appConfig,
-    string connection_string,
-    const int next_record_number
+    string connection_string
 ) :
     appConfig__(appConfig),              // 2nd
     IObuf__(8192, 512),                  // 3rd

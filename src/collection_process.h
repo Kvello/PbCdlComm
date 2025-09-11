@@ -50,8 +50,7 @@ public:
         bool& executionComplete,
         bool& optDebug,
         CommInpCfg& appConfig,
-        string connection_string,
-        const int next_record_number
+        string connection_string
     );
     ~PB5CollectionProcess() throw();
     virtual void init(int argc, char* argv[]) throw (exception);
