@@ -152,4 +152,5 @@ string GetFixedLenString (const byte *str_ptr, const Field& var);
 float GetFinalStorageFloat (uint2 unum);
 string GetVarLenString(const byte *str_ptr);
 const char* getDataType (const Field& var);
+bool fileExists(const string& file_name);
 #endif

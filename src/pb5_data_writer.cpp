@@ -10,6 +10,7 @@
 #include <sys/time.h>
 #include <unistd.h>
 #include <cmath>
+#include <string>
 #include <log4cpp/Category.hh>
 #include "pb5.h"
 #include "utils.h"
@@ -26,14 +27,36 @@ using namespace log4cpp;
 CharacterOutputWriter :: CharacterOutputWriter(
     const string pipe_name, 
     string separator,
-    Table table
+    Table& table,
+    const string& additional_header
 ) : seperator__(separator),
+    TableDataWriter(table),
     recordCount__(0),
-    header_sent(false)
+    header_sent(false),
+    additional_header__(additional_header)
 {
-    table__ = table;
-    dataFileStream__.exceptions(ofstream::badbit | ofstream::failbit); 
-    dataFileStream__.open(pipe_name.c_str(),ios_base::app);
+    bool recovery_successs = false;
+    if(fileExists(pipe_name)){
+        //TODO: If the file exists, check integrity(pretty basic), get the newest line, and extract record number
+        // Set this record number in the table
+        ifstream file(pipe_name.c_str());
+        if(file.good()&&fileValid(file)){
+            // Records are always the second field in the data line
+            // The above should have stripped away the header
+            int next_rec_nbr = readLastRecordNumber(file);
+            file.close();
+            dataFileStream__.open(pipe_name.c_str(),ios_base::app);
+            recovery_successs = dataFileStream__.good();
+            if(recovery_successs){
+                table__.NextRecordNbr=next_rec_nbr+1;
+            }
+            header_sent = true;
+        }
+    }
+    if(!recovery_successs){
+        dataFileStream__.open(pipe_name.c_str(),ios_base::out);
+        if(!dataFileStream__.good()) throw ios_base::failure("Cannot open file "+pipe_name );
+    }
 }
 
 /**
@@ -100,10 +123,10 @@ string CharacterOutputWriter :: getFileTimestamp (uint4 sample_time)
     return file_timestamp;
 }
 
-void CharacterOutputWriter :: initWrite(string additional_header)
+void CharacterOutputWriter :: initWrite()
 {
     if(!header_sent){
-        writeHeader(additional_header);
+        writeHeader(dataFileStream__,table__, additional_header__);
         header_sent = true;
     }
 }
@@ -436,7 +459,7 @@ string Field::getProperty(int infoType, int dim) const
     return formattedPropertyValue.str();
 }
 
-void CharacterOutputWriter :: printHeaderLine(const char* prefix, 
+void printHeaderLine(ostream& out, const char* prefix, 
         const vector<Field>& fieldList, int infoType)
 {
     int dim;
@@ -447,46 +470,123 @@ void CharacterOutputWriter :: printHeaderLine(const char* prefix,
     }
 
     fieldItr = fieldList.begin();
-    dataFileStream__ << prefix;
+    out << prefix;
 
     for (fieldItr = fieldList.begin(); fieldItr != fieldList.end(); 
             fieldItr++){
         if ( (fieldItr->Dimension > 1) && ( (fieldItr->FieldType != 11) &&
                 (fieldItr->FieldType != 16) ) ) {
             for (dim = 1; dim <= (int)fieldItr->Dimension; dim++) {
-               dataFileStream__ << fieldItr->getProperty(infoType, dim);
+               out << fieldItr->getProperty(infoType, dim);
             }
         }
         else {
-           dataFileStream__ << fieldItr->getProperty(infoType, 0);
+           out << fieldItr->getProperty(infoType, 0);
         }
     }
 
-   dataFileStream__ << endl;
+   out << endl;
    return;
 }
 
-void CharacterOutputWriter :: writeHeader(string additional_header)
+void writeHeader(ostream& out, const Table& table, const string& additional_header)
 {
-    const vector<Field>& fieldList = table__.field_list;
-
-
+    const vector<Field>& fieldList = table.field_list;
     //////////////////////////////////////////////////////
     // Print the file header : File format type, Station
     // name, Datalogger type, serial number, OS Version,
     // Datalogger program name, Datalogger program 
     // signature and the table name
     //////////////////////////////////////////////////////
-
-    dataFileStream__<<additional_header;
+    const string table_name = table.TblName;
+    out<<additional_header
+        << table_name << "\",\"" 
+        << PB5_APP_NAME << "-" 
+        << PB5_APP_VERS << "\"" << endl;
     // Print field names
-    printHeaderLine("\"TIMESTAMP\",\"RECORD\",", fieldList, 1);
+    printHeaderLine(out,"\"TIMESTAMP\",\"RECORD\",", fieldList, 1);
 
     // Print field unit
-    printHeaderLine("\"TS\",\"RN\",", fieldList, 2);
+    printHeaderLine(out,"\"TS\",\"RN\",", fieldList, 2);
 
     // Print processing type for each field
-    printHeaderLine("\"\",\"\",", fieldList, 3);
+    printHeaderLine(out, "\"\",\"\",", fieldList, 3);
 
     return;
+}
+/**
+ * This function ASSUMES that the file file_name exist
+ * The function in only used once, and only extracted as a separate funciton
+ * for simpler implementation
+ */
+bool CharacterOutputWriter::fileValid(ifstream& file){
+    ostringstream header_oss;
+    ostringstream header_from_file;
+    string valid_header;
+    writeHeader(header_oss,table__,additional_header__);
+    if(file.is_open()){
+        // File exist and we can open. Attempt recovery
+        valid_header = header_oss.str();
+        if (valid_header.empty()) {
+            // We cannot use header to verify file
+            return false;
+        }
+        int line_count = count(valid_header.begin(), valid_header.end(), '\n');
+        // If the string doesn't end with a newline, add 1 for the last line
+        if (valid_header[valid_header.size() - 1] != '\n') {
+            line_count++;
+        }
+        int count = 0;
+        string line;
+        while (getline(file,line)&& count < line_count) {
+            header_from_file << line << endl;
+            count++;
+        }   
+    }
+    bool file_valid =header_from_file.str() == valid_header;
+    return file_valid;
+}
+int readLastRecordNumber(ifstream& file){
+    file.seekg(0, ios::end);
+    streamoff fileSize = file.tellg();
+
+    if (fileSize == 0) {
+        cerr << "File is empty\n";
+        return 1;
+    }
+
+    char ch;
+    // Move backwards until newline (or beginning of file)
+    for (long long pos = fileSize - 1; pos >= 0; --pos) {
+        file.seekg(pos);
+        file.get(ch);
+        if (ch == '\n' && pos != fileSize - 1) {
+            break;
+        }
+    }
+
+    // Now read the last line
+    string lastLine;
+    getline(file, lastLine);
+
+    // --- Parse line
+    stringstream ss(lastLine);
+    string token;
+    int colIdx = 0;
+    int recordNum = -1;
+
+    while (getline(ss, token, ',')) {
+        if (colIdx == 1) { // second column
+            istringstream iss(token);
+            iss>>recordNum;
+            break;
+        }
+        ++colIdx;
+    }
+    if(recordNum==-1){
+        cout<<"Program recovery attempted, but could not find last record number\n";
+        cout<<"Program will fetch only new data from this point onwards\n";
+    }
+
+    return recordNum;
 }

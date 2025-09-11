@@ -83,7 +83,7 @@ typedef struct {
  */
 struct Table {
     Table() : TblNum(0), TblSize((uint4)0), TblSignature((uint2)0),
-    NextRecordNbr(-1){}
+    NextRecordNbr(0){}
     /* 
      * The following parameters are read in from the Table Definitions file
      * stored on the logger.
@@ -121,11 +121,11 @@ class TableDataManager {
 
         TableDataWriter* getTableDataWriter();
 
-        int BuildTDF(istream& table_structyre);
+        int BuildTDF(istream& table_structure);
         int    xmlDumpTDF (char *filename);
 
         Table& getTableRef (const string& TableName) throw (invalid_argument);
-        int    storeRecord (Table& tbl_ref, byte **data, uint4 rec_num)
+        int    storeRecord (Table& tbl_ref, byte **data, uint4 rec_num,bool parseTimestamp)
                throw (StorageException);
         int    getRecordSize (const Table& tbl);
         int    getMaxRecordSize();
@@ -159,6 +159,7 @@ class TableDataManager {
         map<string,TableDataWriter*> tblDataWriters;
         string separator;
         string working_path__;
+        string additional_header__;
 };
 
 /**
@@ -170,11 +171,11 @@ class TableDataManager {
  */
 class TableDataWriter {
 public: 
-    TableDataWriter(){}
+    TableDataWriter(Table& table):table__(table){}
     virtual ~TableDataWriter() {}
 
     /** Function called while starting data collection for a specific table. */
-    virtual void initWrite(string additional_header)=0;
+    virtual void initWrite()=0;
 
     /** Function called just before processing a binary data record */
     virtual void processRecordBegin(int recordIdx, 
@@ -213,7 +214,7 @@ public:
     virtual void finishWrite() throw (StorageException) = 0; 
 
 protected:
-    Table table__;
+    Table& table__;
 private:
     /** 
      * A handle to the TableDataManager object which will invoke this 
@@ -223,12 +224,16 @@ private:
 
 
 /**
- * Implementation of the TableDataWriter interface for writing to std::cout
+ * Implementation of the TableDataWriter interface for writing to cout
  */
 class CharacterOutputWriter : public TableDataWriter {
 public:
-    CharacterOutputWriter(const string pipe_name, string separator, Table table);
-    virtual void initWrite(string additional_header);
+    CharacterOutputWriter(const string pipe_name, 
+        string separator, 
+        Table& table, 
+        const string& additional_header=""
+    );
+    virtual void initWrite();
     virtual void processRecordBegin(int recordIdx,NSec recordTime);
     virtual void storeDataSample (const Field& var, byte **data);
     virtual void logUnimplementedDataError (const Field& var);
@@ -247,9 +252,6 @@ public:
 
 protected:
     ofstream dataFileStream__;
-    void   writeHeader(string additional_header);
-    void   printHeaderLine(const char* prefix, const vector<Field>& fieldList, 
-               int infoType);
     string getFileTimestamp(uint4 sample_time) throw (invalid_argument);
     void   reportRecordCount();
 
@@ -257,12 +259,17 @@ private:
     string   dataDir__;
     string     seperator__;
     int      recordCount__;        
-    DataOutputConfig dataOutputConfig__;
     DLProgStats   dlProgStats__;
+    const string& additional_header__;
     bool header_sent;
+    bool fileValid(ifstream& file);
 };
 NSec   parseRecordTime(const byte* data);
 
+void writeHeader(ostream& out, const Table& table, const string& additional_header);
+int readLastRecordNumber(ifstream& file);
+void printHeaderLine(ostream& out,const char* prefix, const vector<Field>& fieldList, 
+        int infoType);
 float GetFinalStorageFloat (uint2 unum);
 //! Function to convert a bit pattern to the equivalent floating
 //! point number following specifications of IEEE-754 standard.

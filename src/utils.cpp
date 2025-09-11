@@ -556,3 +556,9 @@ const char* getDataType (const Field& var)
             return "Unknown";
     }
 }
+bool fileExists(const string& file_name){
+    ifstream file(file_name.c_str());
+    bool is_good = file.good();
+    file.close();
+    return is_good;
+}

@@ -118,7 +118,14 @@ float intBitsToFloat (uint4 bits)
 TableDataManager :: TableDataManager (const string separator,const string working_path): 
 separator(separator), working_path__(working_path)
 { 
-
+    stringstream header;
+    header << "\"TOA5\",\"" << dataOutputConfig__.StationName << "\",\""
+                                     << dataOutputConfig__.LoggerType << "\",\""
+                                     << dataLoggerProgStats__.SerialNbr << "\",\"" 
+                                     << dataLoggerProgStats__.OSVer << "\",\""
+                                     << dataLoggerProgStats__.ProgName << "\",\"" 
+                                     << dataLoggerProgStats__.ProgSig << "\",\"" ;
+    additional_header__ = header.str();
 }
 
 
@@ -217,13 +224,13 @@ int TableDataManager :: BuildTDF(istream& table_structure)
         ptr += nbytes;
         table_num++;
     }    
-    for(vector<Table>::const_iterator tbl_it=tableList__.begin();tbl_it!=tableList__.end(); tbl_it++){
+    for(vector<Table>::iterator tbl_it=tableList__.begin();tbl_it!=tableList__.end(); tbl_it++){
         string table_name = tbl_it->TblName;
         string file_name = working_path__ +"/"+ table_name + ".raw";
-        TableDataWriter* writer(new CharacterOutputWriter(file_name, separator,*tbl_it));
-        tblDataWriters.insert(std::make_pair(table_name, writer));
+        TableDataWriter* writer(new CharacterOutputWriter(file_name, separator,*tbl_it,additional_header__));
+        tblDataWriters.insert(make_pair(table_name, writer));
     }
-   
+    delete [] tdf_data;
     return SUCCESS;
 }
 
@@ -569,17 +576,8 @@ int TableDataManager :: getRecordSize (const Table& tbl)
 
 void TableDataManager::initWrite(string table_name){
 
-    stringstream header;
-    header << "\"TOA5\",\"" << dataOutputConfig__.StationName << "\",\""
-                                     << dataOutputConfig__.LoggerType << "\",\""
-                                     << dataLoggerProgStats__.SerialNbr << "\",\"" 
-                                     << dataLoggerProgStats__.OSVer << "\",\""
-                                     << dataLoggerProgStats__.ProgName << "\",\"" 
-                                     << dataLoggerProgStats__.ProgSig << "\",\"" 
-                                     << table_name << "\",\"" 
-                                     << PB5_APP_NAME << "-" 
-                                     << PB5_APP_VERS << "\"" << endl;
-    tblDataWriters.at(table_name)->initWrite(header.str());
+
+    tblDataWriters.at(table_name)->initWrite();
     
 }
 void TableDataManager::finishWrite(string table_name){
@@ -762,9 +760,9 @@ NSec parseRecordTime(const byte* data)
  * @param file_span: Span of a datafile in seconds
  * @return SUCCESS | FAILURE (If the data file couldn't be opened).
  */ 
-int TableDataManager :: storeRecord (Table& tbl_ref, byte **data, uint4 rec_num) throw (StorageException)
+int TableDataManager :: storeRecord (Table& tbl_ref, byte **data, uint4 rec_num,bool parseTimestamp) throw (StorageException)
 {
-    vector<Field>           field_list = tbl_ref.field_list;
+    vector<Field> field_list = tbl_ref.field_list;
     vector<Field>::const_iterator start, end, itr;
     NSec recordTime;
 
@@ -773,11 +771,18 @@ int TableDataManager :: storeRecord (Table& tbl_ref, byte **data, uint4 rec_num)
     TableDataWriter* tblDataWriter = tblDataWriters.at(tbl_ref.TblName);
 
     try {
-        // tbl_ref.LastRecordTime = parseRecordTime(*data);
-        recordTime = parseRecordTime(*data);
-        *data += 8;
+        if (parseTimestamp) {
+            // tbl_ref.LastRecordTime = parseRecordTime(*data);
+            recordTime = parseRecordTime(*data);
+            *data += 8;
+        } 
+        else {
+            // tbl_ref.LastRecordTime += tbl_ref.TblTimeInterval;
+            recordTime = tbl_ref.LastRecordTime;
+            recordTime += tbl_ref.TblTimeInterval;
+        }
     
-        tblDataWriter->processRecordBegin(rec_num, recordTime);
+        tblDataWriter->processRecordBegin(rec_num,recordTime);
         
         for (itr = start; itr < end; itr++) {
             if ((itr->FieldType == 11) || (itr->FieldType == 16)) {
@@ -791,21 +796,19 @@ int TableDataManager :: storeRecord (Table& tbl_ref, byte **data, uint4 rec_num)
         }
 
         tblDataWriter->processRecordEnd();
-               
+       
         // Update state variables
         tbl_ref.LastRecordTime = recordTime;
-    }       
-
+        tbl_ref.NextRecordNbr += 1;
+    }
     catch (...) {
         stringstream errormsg;
         char timestamp[64];
         CharacterOutputWriter::GetTimestamp(timestamp, recordTime);
         errormsg << "Failure in storing data record{\"id\":" 
-                 << ", \"timestamp\":"
+                 << tbl_ref.NextRecordNbr << ", \"timestamp\":"
                  << timestamp << "}";
         throw StorageException(__FILE__, __LINE__, errormsg.str().c_str());
     } 
     return SUCCESS; 
 }
-
-
