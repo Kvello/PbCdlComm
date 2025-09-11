@@ -83,7 +83,7 @@ typedef struct {
  */
 struct Table {
     Table() : TblNum(0), TblSize((uint4)0), TblSignature((uint2)0),
-    NextRecordNbr(-1){}
+    NextRecordNbr(0){}
     /* 
      * The following parameters are read in from the Table Definitions file
      * stored on the logger.
@@ -125,7 +125,7 @@ class TableDataManager {
         int    xmlDumpTDF (char *filename);
 
         Table& getTableRef (const string& TableName) throw (invalid_argument);
-        int    storeRecord (Table& tbl_ref, byte **data, uint4 rec_num)
+        int    storeRecord (Table& tbl_ref, byte **data, uint4 rec_num,bool parseTimestamp)
                throw (StorageException);
         int    getRecordSize (const Table& tbl);
         int    getMaxRecordSize();

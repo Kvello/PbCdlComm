@@ -170,22 +170,44 @@ TableDataManager :: ~TableDataManager ()
 }
 
 /**
- * Function to construct Table structure information from the logger
+ * Function to construct Table structure information from the Table 
+ * Definitions File.
  * It builds and maintains the table information in a vector of Table
- * structures in the class.
+ * structures in memory. Also the constructed table information is 
+ * written to a XML file in the $DATA/.working directory.
  *
- * @return SUCCESS | FAILURE
+ * @return SUCCESS | FAILURE.
  */
-int TableDataManager :: BuildTDF(istream& table_structure)
+int TableDataManager :: BuildTDF()
 {
+    ifstream TDFdata;
     tableList__.clear();
-    table_structure.seekg (0, ios_base::end);
-    int len = table_structure.tellg ();
-    table_structure.seekg (0, ios_base::beg);
+    string   conf_dir(dataOutputConfig__.WorkingPath);
+    conf_dir += "/.working";
+    string   tdf_file(conf_dir);
+    string   xml_file(conf_dir);
+    tdf_file += "/tdf.dat";
+    xml_file += "/tdf.xml";
 
-        if (len == 0) {
+    TDFdata.open (tdf_file.c_str(), ios::binary);
+
+    if (!TDFdata.is_open()) {
+         Category::getInstance("TableDataManager")
+                  .warn("Table definitions file does not exist : " +
+                           tdf_file);
+        return FAILURE;
+    }
+    TDFdata.seekg (0, ios_base::end);
+    int len = TDFdata.tellg ();
+    TDFdata.seekg (0, ios_base::beg);
+
+    if (len == 0) {
         Category::getInstance("TableDataManager")
                  .error("No data available for parsing Table definitions");
+        TDFdata.close();
+        Category::getInstance("TableDataManager")
+                 .info("Removing invalid table definition file : " + tdf_file);
+        unlink(tdf_file.c_str());
         return FAILURE;
     }
 
@@ -197,11 +219,11 @@ int TableDataManager :: BuildTDF(istream& table_structure)
     catch(bad_alloc& bae) {
         Category::getInstance("TableDataManager")
                  .error("Failed to allocate buffer to parsing Table definitions");
+        TDFdata.close();
         return FAILURE;
     }
 
-    table_structure.read ((char *)tdf_data, len);
-
+    TDFdata.read ((char *)tdf_data, len);
 
     byte* ptr    = tdf_data;
     byte* endptr = tdf_data+len;
@@ -213,24 +235,37 @@ int TableDataManager :: BuildTDF(istream& table_structure)
         int nbytes = readTableDefinition (table_num, ptr, endptr);
         if (nbytes == -1) {
             Category::getInstance("TableDataManager")
-                     .error("Failed to parse table definitions from stream");
+                     .error("Failed to parse table definitions from : " + tdf_file);
             tableList__.clear();
             delete [] tdf_data;
+            TDFdata.close();
             Category::getInstance("TableDataManager")
-                     .info("Removing invalid table definition in stream");
+                     .info("Removing invalid table definition file : " + tdf_file);
+            unlink(tdf_file.c_str());
             return FAILURE;
             break;
         }
         ptr += nbytes;
         table_num++;
-    }    
+    }
+   
+    // Clean up the buffer memory
+    delete [] tdf_data;
+
+    // Dump the table definitions into a XML file
+    xmlDumpTDF ((char *)xml_file.c_str());
+
+    // Load the storage history for various tables - information as last 
+    // stored index etc.
+    // loadTableStorageHistory();
+
     for(vector<Table>::iterator tbl_it=tableList__.begin();tbl_it!=tableList__.end(); tbl_it++){
         string table_name = tbl_it->TblName;
         string file_name = working_path__ +"/"+ table_name + ".raw";
         TableDataWriter* writer(new CharacterOutputWriter(file_name, separator,*tbl_it,additional_header__));
         tblDataWriters.insert(make_pair(table_name, writer));
     }
-   
+
     return SUCCESS;
 }
 
@@ -760,7 +795,7 @@ NSec parseRecordTime(const byte* data)
  * @param file_span: Span of a datafile in seconds
  * @return SUCCESS | FAILURE (If the data file couldn't be opened).
  */ 
-int TableDataManager :: storeRecord (Table& tbl_ref, byte **data, uint4 rec_num) throw (StorageException)
+int TableDataManager :: storeRecord (Table& tbl_ref, byte **data, uint4 rec_num,bool parseTimestamp) throw (StorageException)
 {
     vector<Field>           field_list = tbl_ref.field_list;
     vector<Field>::const_iterator start, end, itr;
@@ -771,11 +806,18 @@ int TableDataManager :: storeRecord (Table& tbl_ref, byte **data, uint4 rec_num)
     TableDataWriter* tblDataWriter = tblDataWriters.at(tbl_ref.TblName);
 
     try {
-        // tbl_ref.LastRecordTime = parseRecordTime(*data);
-        recordTime = parseRecordTime(*data);
-        *data += 8;
+        if (parseTimestamp) {
+            // tbl_ref.LastRecordTime = parseRecordTime(*data);
+            recordTime = parseRecordTime(*data);
+            *data += 8;
+        } 
+        else {
+            // tbl_ref.LastRecordTime += tbl_ref.TblTimeInterval;
+            recordTime = tbl_ref.LastRecordTime;
+            recordTime += tbl_ref.TblTimeInterval;
+        }
     
-        tblDataWriter->processRecordBegin(rec_num, recordTime);
+        tblDataWriter->processRecordBegin(rec_num,recordTime);
         
         for (itr = start; itr < end; itr++) {
             if ((itr->FieldType == 11) || (itr->FieldType == 16)) {
@@ -789,21 +831,19 @@ int TableDataManager :: storeRecord (Table& tbl_ref, byte **data, uint4 rec_num)
         }
 
         tblDataWriter->processRecordEnd();
-               
+       
         // Update state variables
         tbl_ref.LastRecordTime = recordTime;
-    }       
-
+        tbl_ref.NextRecordNbr += 1;
+    }
     catch (...) {
         stringstream errormsg;
         char timestamp[64];
         CharacterOutputWriter::GetTimestamp(timestamp, recordTime);
         errormsg << "Failure in storing data record{\"id\":" 
-                 << ", \"timestamp\":"
+                 << tbl_ref.NextRecordNbr << ", \"timestamp\":"
                  << timestamp << "}";
         throw StorageException(__FILE__, __LINE__, errormsg.str().c_str());
     } 
     return SUCCESS; 
 }
-
-
