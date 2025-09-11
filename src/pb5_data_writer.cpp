@@ -46,10 +46,10 @@ CharacterOutputWriter :: CharacterOutputWriter(
             int next_rec_nbr = readLastRecordNumber(file);
             file.close();
             dataFileStream__.open(pipe_name.c_str(),ios_base::app);
-            if(next_rec_nbr!= -1){
+            recovery_successs = dataFileStream__.good();
+            if(recovery_successs){
                 table__.NextRecordNbr=next_rec_nbr+1;
             }
-            recovery_successs = dataFileStream__.good();
             header_sent = true;
         }
     }
