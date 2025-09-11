@@ -713,8 +713,8 @@ int BMP5Obj :: CollectData (Table& tbl_ref) throw (AppException, invalid_argumen
         msgstrm.str("");
          
         //If we have not yet collected any records, and next_rec_nbr=-1, we assume there is exactly
-        // 1 new record. Note that this implies no fault tolerance if the system/program crashes (we can't know where we left off)
-        int next_rec_nbr = tblDataMgr__.getNextRecordNumber(tbl_ref);
+        // 1 new record.
+        int& next_rec_nbr=tbl_ref.NextRecordNbr;
         if(next_rec_nbr==-1){
             next_rec_nbr = last_rec_nbr;
         }
@@ -839,9 +839,8 @@ int BMP5Obj :: CollectData (Table& tbl_ref) throw (AppException, invalid_argumen
                 } 
             }
             else {
-                // next_rec_nbr += nrecs_read;
+                next_rec_nbr += nrecs_read;
                 num_collected_recs += nrecs_read;
-                next_rec_nbr += num_collected_recs;
             }
         }
        

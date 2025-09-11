@@ -46,8 +46,11 @@ CharacterOutputWriter :: CharacterOutputWriter(
             int next_rec_nbr = readLastRecordNumber(file);
             file.close();
             dataFileStream__.open(pipe_name.c_str(),ios_base::app);
-            table__.NextRecordNbr=next_rec_nbr;
+            if(next_rec_nbr!= -1){
+                table__.NextRecordNbr=next_rec_nbr+1;
+            }
             recovery_successs = dataFileStream__.good();
+            header_sent = true;
         }
     }
     if(!recovery_successs){
@@ -535,13 +538,13 @@ bool CharacterOutputWriter::fileValid(ifstream& file){
         }
         int count = 0;
         string line;
-        ostringstream header_from_file;
-        while (getline(file, line) && count < line_count) {
+        while (getline(file,line)&& count < line_count) {
             header_from_file << line << endl;
             count++;
         }   
     }
-    return header_from_file.str() == valid_header;
+    bool file_valid =header_from_file.str() == valid_header;
+    return file_valid;
 }
 int readLastRecordNumber(ifstream& file){
     file.seekg(0, ios::end);

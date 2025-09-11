@@ -558,5 +558,7 @@ const char* getDataType (const Field& var)
 }
 bool fileExists(const string& file_name){
     ifstream file(file_name.c_str());
-    return file.good();
+    bool is_good = file.good();
+    file.close();
+    return is_good;
 }
