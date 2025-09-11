@@ -514,7 +514,6 @@ BMP5Obj :: sendCollectionCmd (byte message_type, const Table& tbl, uint4 P1, uin
     SendPBPacket();
     return TranNbr__;
 }
-
 /**
  * Function to store data for a table from a bytesequence.
  * This function uses the information stored in Table Definition File to 
@@ -530,6 +529,7 @@ BMP5Obj :: sendCollectionCmd (byte message_type, const Table& tbl, uint4 P1, uin
  *             extracted from byte sequence and stored.
  * @param beg: Record number of the first data record to extract.
  * @param nrecs: Number of records to extract.
+ * @param file_span: Span of a datafile in seconds.
  * @return stat: Returns status to indicate if the data extraction and storage
  *             was successful.
  */
@@ -537,10 +537,11 @@ int
 BMP5Obj :: store_data (byte* buf, Table& tbl, int beg, int nrecs) throw (StorageException)
 {
     int stat = FAILURE;
+    bool parseTimestamp = true;
     int rec_num = 0;
     while (rec_num < nrecs) {
         try {
-            stat = tblDataMgr__.storeRecord (tbl, &buf, beg+rec_num);
+            stat = tblDataMgr__.storeRecord (tbl, &buf, beg+rec_num, parseTimestamp);
         } catch (StorageException& e) {
             Category::getInstance("BMP5")
                      .error("Caught exception while storing data for " + tbl.TblName);
@@ -548,6 +549,7 @@ BMP5Obj :: store_data (byte* buf, Table& tbl, int beg, int nrecs) throw (Storage
                      .error(e.what()); 
             throw;
         }
+        parseTimestamp = false;
         if (stat == FAILURE) {
             break;
         }
@@ -555,6 +557,23 @@ BMP5Obj :: store_data (byte* buf, Table& tbl, int beg, int nrecs) throw (Storage
     } 
     return stat;
 }
+
+/**
+ * Function to collect data from a specified table. 
+ * First a message is sent to the data logger to query about the last stored
+ * record. Next, the record number to begin the collection from is determined.
+ * If the record number collected during is last attempt is known, then 
+ * the collection begins from the record next to it. Else, the collection
+ * begins from the earliest possible record. The collection goes one record
+ * at a time untill the response to collect command returns an empty
+ * data section. Data packets are parsed using process_data_packet().
+ * It calls storeRecord() in turn to actually extract records for the
+ * specified table from the byte sequence and write them to disk.
+ *
+ * @param table_opt: Structure containing table name and span information.
+ * @param span: Span of datafile in seconds
+ * @return SUCCESS | FAILURE
+ */
 
 const vector<Table>& BMP5Obj::getTableDefinitions(){
     return tblDataMgr__.getTables();

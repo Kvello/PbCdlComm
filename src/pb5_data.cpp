@@ -230,7 +230,7 @@ int TableDataManager :: BuildTDF(istream& table_structure)
         TableDataWriter* writer(new CharacterOutputWriter(file_name, separator,*tbl_it,additional_header__));
         tblDataWriters.insert(make_pair(table_name, writer));
     }
-   
+    delete [] tdf_data;
     return SUCCESS;
 }
 
@@ -760,9 +760,9 @@ NSec parseRecordTime(const byte* data)
  * @param file_span: Span of a datafile in seconds
  * @return SUCCESS | FAILURE (If the data file couldn't be opened).
  */ 
-int TableDataManager :: storeRecord (Table& tbl_ref, byte **data, uint4 rec_num) throw (StorageException)
+int TableDataManager :: storeRecord (Table& tbl_ref, byte **data, uint4 rec_num,bool parseTimestamp) throw (StorageException)
 {
-    vector<Field>           field_list = tbl_ref.field_list;
+    vector<Field> field_list = tbl_ref.field_list;
     vector<Field>::const_iterator start, end, itr;
     NSec recordTime;
 
@@ -771,11 +771,18 @@ int TableDataManager :: storeRecord (Table& tbl_ref, byte **data, uint4 rec_num)
     TableDataWriter* tblDataWriter = tblDataWriters.at(tbl_ref.TblName);
 
     try {
-        // tbl_ref.LastRecordTime = parseRecordTime(*data);
-        recordTime = parseRecordTime(*data);
-        *data += 8;
+        if (parseTimestamp) {
+            // tbl_ref.LastRecordTime = parseRecordTime(*data);
+            recordTime = parseRecordTime(*data);
+            *data += 8;
+        } 
+        else {
+            // tbl_ref.LastRecordTime += tbl_ref.TblTimeInterval;
+            recordTime = tbl_ref.LastRecordTime;
+            recordTime += tbl_ref.TblTimeInterval;
+        }
     
-        tblDataWriter->processRecordBegin(rec_num, recordTime);
+        tblDataWriter->processRecordBegin(rec_num,recordTime);
         
         for (itr = start; itr < end; itr++) {
             if ((itr->FieldType == 11) || (itr->FieldType == 16)) {
@@ -789,21 +796,19 @@ int TableDataManager :: storeRecord (Table& tbl_ref, byte **data, uint4 rec_num)
         }
 
         tblDataWriter->processRecordEnd();
-               
+       
         // Update state variables
         tbl_ref.LastRecordTime = recordTime;
-    }       
-
+        tbl_ref.NextRecordNbr += 1;
+    }
     catch (...) {
         stringstream errormsg;
         char timestamp[64];
         CharacterOutputWriter::GetTimestamp(timestamp, recordTime);
         errormsg << "Failure in storing data record{\"id\":" 
-                 << ", \"timestamp\":"
+                 << tbl_ref.NextRecordNbr << ", \"timestamp\":"
                  << timestamp << "}";
         throw StorageException(__FILE__, __LINE__, errormsg.str().c_str());
     } 
     return SUCCESS; 
 }
-
-
