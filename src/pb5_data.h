@@ -121,7 +121,7 @@ class TableDataManager {
 
         TableDataWriter* getTableDataWriter();
 
-        int BuildTDF(istream& table_structyre);
+        int BuildTDF(istream& table_structure);
         int    xmlDumpTDF (char *filename);
 
         Table& getTableRef (const string& TableName) throw (invalid_argument);
