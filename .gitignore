@@ -3,8 +3,6 @@ docs
 # Nix setup
 .envrc
 .direnv
-shell.nix
-default.nix
 # Compile output
 bin
 obj
